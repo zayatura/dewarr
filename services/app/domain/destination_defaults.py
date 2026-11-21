@@ -57,7 +57,8 @@ async def destination_default(db, user, medium, library_id, saved_id):
     if len(destinations) > 1:
         raise HTTPException(
             422,
-            f"Several {label} library folders are configured. "
-            "Choose a default in Settings → Download preferences.",
+            f"Several {label} library folders are configured. Choose the {label} "
+            "library for this request, or set a default library in Settings → "
+            "Download preferences.",
         )
     return destinations[0]

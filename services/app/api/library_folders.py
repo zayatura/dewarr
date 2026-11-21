@@ -5,12 +5,12 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.adapters.audiobookshelf import Audiobookshelf, backend_path
 from app.adapters.contracts import AdapterError
@@ -221,6 +221,35 @@ class FolderInput(StrictModel):
         return str(path)
 
 
+async def library_destination(db, library_id, medium):
+    """Each library keeps one folder per medium; the oldest predates per-library keys."""
+    return await db.scalar(
+        select(ImportDestination)
+        .where(
+            ImportDestination.workflow == "library",
+            ImportDestination.library_id == library_id,
+            ImportDestination.medium == medium,
+            ImportDestination.deleted_at.is_(None),
+        )
+        .order_by(
+            (ImportDestination.root_key == f"library-{medium}").desc(),
+            ImportDestination.created_at,
+            ImportDestination.id,
+        )
+        .limit(1)
+    )
+
+
+async def new_library_key(db, medium):
+    # Keep the original key for the first folder so earlier releases still find it.
+    legacy = f"library-{medium}"
+    if not await db.scalar(
+        select(ImportDestination.id).where(ImportDestination.root_key == legacy)
+    ):
+        return legacy
+    return f"{legacy}-{uuid4()}"
+
+
 @router.put("/{medium}", response_model=DestinationView)
 async def choose(medium: Literal["ebook", "audio"], body: FolderInput, admin: Admin, db: Database):
     await transaction_lock(db, "library-storage")
@@ -268,16 +297,17 @@ async def choose(medium: Literal["ebook", "audio"], body: FolderInput, admin: Ad
         )
     if medium == "audio" and getattr(config, "audio_allowed", True) is False:
         raise HTTPException(422, "This library does not accept audiobooks. Choose another library.")
-    root_key = (
-        f"bookdrop-{body.integration_id}" if body.workflow == "bookdrop" else f"library-{medium}"
-    )
-    destination = (
-        await db.get(ImportDestination, body.destination_id)
-        if body.destination_id
-        else await db.scalar(
+    if body.destination_id:
+        destination = await db.get(ImportDestination, body.destination_id)
+        root_key = destination.root_key if destination else None
+    elif body.workflow == "bookdrop":
+        root_key = f"bookdrop-{body.integration_id}"
+        destination = await db.scalar(
             select(ImportDestination).where(ImportDestination.root_key == root_key)
         )
-    )
+    else:
+        destination = await library_destination(db, body.library_id, medium)
+        root_key = destination.root_key if destination else await new_library_key(db, medium)
     if body.destination_id and (not destination or destination.deleted_at):
         raise HTTPException(404, "Destination no longer exists")
     if destination:
@@ -446,6 +476,31 @@ async def choose(medium: Literal["ebook", "audio"], body: FolderInput, admin: Ad
     return await view(db, destination)
 
 
+async def keeps_default(db, preferences, destination):
+    """Another library's working folder stays the default when one more is activated."""
+    saved_library = preferences.get(f"{destination.medium}_library_id")
+    saved_destination = preferences.get(f"{destination.medium}_destination_id")
+    if not saved_library and not saved_destination:
+        return False
+    other = or_(
+        *([ImportDestination.id == UUID(saved_destination)] if saved_destination else []),
+        *([ImportDestination.library_id == UUID(saved_library)] if saved_library else []),
+    )
+    return bool(
+        await db.scalar(
+            select(ImportDestination.id)
+            .where(
+                other,
+                ImportDestination.id != destination.id,
+                ImportDestination.medium == destination.medium,
+                ImportDestination.enabled.is_(True),
+                ImportDestination.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+    )
+
+
 class ActivateInput(StrictModel):
     expected_revision: str
     automatic: bool = True
@@ -490,6 +545,12 @@ async def activate(destination_id: UUID, body: ActivateInput, admin: Admin, db: 
         defaults = await db.scalar(
             select(AcquisitionDefaults).where(AcquisitionDefaults.key == key)
         )
+        if (
+            destination.workflow == "library"
+            and defaults
+            and await keeps_default(db, defaults.preferences, destination)
+        ):
+            continue
         if not defaults:
             defaults = AcquisitionDefaults(key=key, owner_id=owner, generation=0, preferences={})
             db.add(defaults)

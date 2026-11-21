@@ -1,6 +1,6 @@
 import { expect, test } from "../fixtures";
 
-test("switching from a personal Bookdrop default reuses the existing direct route revision", async ({
+test("switching a Bookdrop card to another library adds that library's own folder", async ({
   page,
 }) => {
   const bookdrop = {
@@ -17,7 +17,7 @@ test("switching from a personal Bookdrop default reuses the existing direct rout
     server_kind: "grimmory",
     publication_available: false,
   };
-  let direct: any = {
+  const direct = {
     id: "direct",
     workflow: "library",
     library_id: "old-library",
@@ -84,10 +84,7 @@ test("switching from a personal Bookdrop default reuses the existing direct rout
       ];
     else if (path === "/api/organization/library-folders/ebook") {
       submitted = route.request().postDataJSON();
-      if (
-        submitted.destination_id !== "direct" ||
-        submitted.expected_revision !== "direct-revision"
-      ) {
+      if (submitted.destination_id) {
         await route.fulfill({
           status: 409,
           json: {
@@ -97,8 +94,7 @@ test("switching from a personal Bookdrop default reuses the existing direct rout
         });
         return;
       }
-      direct = { ...direct, ...submitted, revision: "updated" };
-      data = direct;
+      data = { ...direct, ...submitted, id: "new", revision: "new-revision" };
     }
     await route.fulfill({ json: data });
   });
@@ -106,19 +102,23 @@ test("switching from a personal Bookdrop default reuses the existing direct rout
   await expect(
     page.getByText("Bookdrop review · Grimmory", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Change ebooks folder" }).click();
-  const dialog = page.getByRole("dialog", { name: "Choose ebooks folder" });
+  await page
+    .getByRole("button", { name: "Change ebooks folder for Bookdrop review" })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Choose ebooks folder for Bookdrop review",
+  });
   await dialog
     .getByRole("combobox", { name: "Library", exact: true })
     .selectOption("new-library|/new-books");
   await dialog.locator('button[type="submit"]').click();
   await expect(dialog).not.toBeVisible();
+  // The other library's direct folder keeps its own route.
   expect(submitted).toMatchObject({
     library_id: "new-library",
     workflow: "library",
-    destination_id: "direct",
-    expected_revision: "direct-revision",
   });
+  expect(submitted.destination_id).toBeUndefined();
 });
 
 test("Bookdrop setup keeps review separate from direct import and saves copy-only intake", async ({

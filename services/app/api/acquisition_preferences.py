@@ -13,6 +13,7 @@ from app.domain.release_profiles import (
     DEFAULTS_LOCK,
     PreferenceOverrides,
     ReleasePreferences,
+    accessible_layers,
     default_layers,
     resolve_preferences,
 )
@@ -53,7 +54,11 @@ async def view(db, user, scope, row):
     effective, origins = resolve_preferences(
         await default_layers(db, user.id if scope == "personal" else None)
     )
-    layers = await default_layers(db) if scope == "personal" else []
+    layers = (
+        await accessible_layers(db, user.id, await default_layers(db))
+        if scope == "personal"
+        else []
+    )
     inherited, inherited_origins = resolve_preferences(layers)
     overrides = row.preferences if row else {}
     return DefaultsView(

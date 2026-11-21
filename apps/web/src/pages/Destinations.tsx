@@ -39,6 +39,80 @@ function posixPath(path: string) {
 type Medium = "ebook" | "audio";
 const names = { ebook: "Ebooks", audio: "Audiobooks" };
 
+function useFolderOptions() {
+  return useQuery({
+    queryKey: ["library-folder-options"],
+    queryFn: async () => {
+      const [libraries, downloaders] = await Promise.all([
+        api.GET("/api/organization/library-folders").then(result),
+        api.GET("/api/downloaders").then(result),
+      ]);
+      return {
+        libraries,
+        downloaders: downloaders.filter(
+          (d) => d.enabled && d.status === "connected" && d.mappings_current,
+        ),
+      };
+    },
+  });
+}
+
+type FolderCard = {
+  key: string;
+  destination?: Destination;
+  libraryId?: string | null;
+  name?: string;
+  serverKind?: string;
+};
+
+// Each library keeps its own folder per format; libraries without one can add it.
+function folderCards(
+  medium: Medium,
+  destinations: Destination[],
+  libraries: { id: string; name: string }[],
+  options: components["schemas"]["FolderOption"][],
+): FolderCard[] {
+  const saved = destinations.filter((item) => item.medium === medium);
+  const cards: FolderCard[] = [
+    ...saved.map((destination) => ({
+      key: destination.id,
+      destination,
+      libraryId: destination.library_id,
+      serverKind: destination.server_kind,
+      name:
+        destination.workflow === "bookdrop"
+          ? "Bookdrop review"
+          : libraries.find((item) => item.id === destination.library_id)
+              ?.name ||
+            options.find((item) => item.library_id === destination.library_id)
+              ?.library_name,
+    })),
+    ...options
+      .filter(
+        (item) =>
+          item.workflow !== "bookdrop" &&
+          item.library_id &&
+          (medium === "audio" ? item.audio_allowed : item.ebooks_allowed) &&
+          !saved.some(
+            (row) =>
+              row.workflow !== "bookdrop" && row.library_id === item.library_id,
+          ),
+      )
+      .map((item): FolderCard => ({
+        key: `${medium}:${item.library_id}`,
+        libraryId: item.library_id,
+        name: item.library_name,
+        serverKind: item.server_kind,
+      })),
+  ].sort(
+    (a, b) =>
+      Number(a.destination?.workflow === "bookdrop") -
+        Number(b.destination?.workflow === "bookdrop") ||
+      (a.name || "").localeCompare(b.name || ""),
+  );
+  return cards.length ? cards : [{ key: `empty:${medium}` }];
+}
+
 async function verifyLibraryFolder(
   destination: Destination,
   clients: components["schemas"]["DownloaderView"][],
@@ -109,7 +183,11 @@ export default function Destinations({
 }: {
   embedded?: boolean;
 }) {
-  const [editing, setEditing] = useState<Medium | null>(null);
+  const [editing, setEditing] = useState<{
+    medium: Medium;
+    card: FolderCard;
+    suffix: string;
+  } | null>(null);
   const cache = useQueryClient();
   const [verificationProgress, setVerificationProgress] = useState("");
   const verification = useMutation({
@@ -148,16 +226,28 @@ export default function Destinations({
     (item) =>
       item.enabled && item.status === "connected" && item.mappings_current,
   );
-  const verifyFolder = (medium: Medium) => {
-    const destination = selected(medium);
-    if (destination) verification.mutate(destination);
-  };
+  const options = useFolderOptions();
   const selected = (medium: Medium) =>
     selectLibraryDestination(
       query.data?.destinations || [],
       query.data?.defaults.effective?.[`${medium}_destination_id`],
       medium,
     );
+  const rows = (["ebook", "audio"] as const).flatMap((medium) => {
+    const cards = folderCards(
+      medium,
+      query.data?.destinations || [],
+      query.data?.libraries || [],
+      options.data?.libraries || [],
+    );
+    const preferred = selected(medium)?.id;
+    return cards.map((card) => ({
+      medium,
+      card,
+      several: cards.length > 1,
+      preferred,
+    }));
+  });
   return (
     <div className="library-folder-settings">
       {!embedded && <h1>Library folders</h1>}
@@ -172,11 +262,10 @@ export default function Destinations({
       ) : (
         query.data && (
           <div className="media-folder-list">
-            {(["ebook", "audio"] as const).map((medium) => {
-              const destination = selected(medium);
-              const library = query.data.libraries.find(
-                (l) => l.id === destination?.library_id,
-              );
+            {rows.map(({ medium, card, several, preferred }) => {
+              const destination = card.destination;
+              // Several cards per format name their library in accessible labels.
+              const suffix = several && card.name ? ` for ${card.name}` : "";
               const routes = destination?.client_routes || [];
               const allVerified =
                 !!routes.length &&
@@ -184,8 +273,8 @@ export default function Destinations({
               return (
                 <section
                   className="media-folder-card"
-                  key={medium}
-                  aria-label={`${names[medium]} destination`}
+                  key={card.key}
+                  aria-label={`${names[medium]} destination${suffix}`}
                 >
                   <div className="media-folder-row">
                     {medium === "ebook" ? (
@@ -201,11 +290,21 @@ export default function Destinations({
                           Shared · Ebooks + Audiobooks
                         </span>
                       )}
+                      {several &&
+                        destination &&
+                        preferred === destination.id && (
+                          <span className="library-folder-status">Default</span>
+                        )}
                       <p>
-                        {destination
-                          ? `${destination.workflow === "bookdrop" ? "Bookdrop review" : library?.name || "Library"} · ${libraryApp(destination.server_kind)}`
+                        {destination || card.name
+                          ? `${card.name || "Library"} · ${libraryApp(card.serverKind)}`
                           : "No folder selected"}
                       </p>
+                      {!destination && card.name && (
+                        <small className="library-folder-status muted">
+                          No folder selected
+                        </small>
+                      )}
                       {destination && (
                         <small
                           className={
@@ -232,16 +331,16 @@ export default function Destinations({
                     <div className="media-folder-actions">
                       <button
                         onClick={() => {
-                          setEditing(medium);
+                          setEditing({ medium, card, suffix });
                         }}
-                        aria-label={`${destination ? "Change" : "Choose"} ${names[medium].toLowerCase()} folder`}
+                        aria-label={`${destination ? "Change" : "Choose"} ${names[medium].toLowerCase()} folder${suffix}`}
                       >
                         <Folder size={15} />
                         {destination ? "Change" : "Choose folder"}
                       </button>
                       {destination && (
                         <DeleteConfiguration
-                          name={`${names[medium].toLowerCase()} folder`}
+                          name={`${names[medium].toLowerCase()} folder${suffix}`}
                           description="Remove this library folder configuration and turn off automatic imports into it. Existing books and files are kept."
                           onDelete={async () =>
                             result(
@@ -351,8 +450,8 @@ export default function Destinations({
                         </div>
                         <button
                           disabled={!readyClient || verification.isPending}
-                          onClick={() => verifyFolder(medium)}
-                          aria-label={`Verify ${names[medium].toLowerCase()} download folders again`}
+                          onClick={() => verification.mutate(destination)}
+                          aria-label={`Verify ${names[medium].toLowerCase()} download folders again${suffix}`}
                         >
                           <CheckCircle2 size={15} />
                           {verification.isPending &&
@@ -366,7 +465,7 @@ export default function Destinations({
                         revision={destination.revision}
                         verified={destination.publication_available}
                         unsaved={false}
-                        onVerify={() => verifyFolder(medium)}
+                        onVerify={() => verification.mutate(destination)}
                       />
                     </div>
                   )}
@@ -378,9 +477,11 @@ export default function Destinations({
       )}
       {editing && (
         <FolderPicker
-          medium={editing}
-          saved={selected(editing)}
-          other={selected(editing === "ebook" ? "audio" : "ebook")}
+          medium={editing.medium}
+          saved={editing.card.destination}
+          libraryId={editing.card.libraryId}
+          suffix={editing.suffix}
+          destinations={query.data?.destinations || []}
           close={() => setEditing(null)}
         />
       )}
@@ -391,12 +492,16 @@ export default function Destinations({
 function FolderPicker({
   medium,
   saved,
-  other,
+  libraryId,
+  suffix,
+  destinations,
   close,
 }: {
   medium: Medium;
   saved?: Destination;
-  other?: Destination;
+  libraryId?: string | null;
+  suffix: string;
+  destinations: Destination[];
   close: () => void;
 }) {
   const cache = useQueryClient();
@@ -458,21 +563,7 @@ function FolderPicker({
     policy.data?.requested_enabled ??
     (policy.data?.generation ? policy.data.enabled : true);
   const [progress, setProgress] = useState("");
-  const options = useQuery({
-    queryKey: ["library-folder-options"],
-    queryFn: async () => {
-      const [libraries, downloaders] = await Promise.all([
-        api.GET("/api/organization/library-folders").then(result),
-        api.GET("/api/downloaders").then(result),
-      ]);
-      return {
-        libraries,
-        downloaders: downloaders.filter(
-          (d) => d.enabled && d.status === "connected" && d.mappings_current,
-        ),
-      };
-    },
-  });
+  const options = useFolderOptions();
   const clients = options.data?.downloaders || [];
   const qbit = clients.filter((client) => client.kind === "qbittorrent");
   const verificationClients = seedingRename ? qbit : clients;
@@ -496,9 +587,22 @@ function FolderPicker({
         ? Number(a.ebooks_allowed) - Number(b.ebooks_allowed)
         : 0,
     );
-  const selectedChoice = choice || folders[0]?.key || "";
+  const selectedChoice =
+    choice ||
+    folders.find((folder) => libraryId && folder.library_id === libraryId)
+      ?.key ||
+    folders[0]?.key ||
+    "";
   const selectedFolder = folders.find(
     (folder) => folder.key === selectedChoice,
+  );
+  // A shared folder pairs both formats of the same library.
+  const other = destinations.find(
+    (row) =>
+      row.medium !== medium &&
+      row.workflow !== "bookdrop" &&
+      !!selectedFolder?.library_id &&
+      row.library_id === selectedFolder.library_id,
   );
   const library = selectedFolder;
   const bookdrop = selectedFolder?.workflow === "bookdrop";
@@ -547,31 +651,18 @@ function FolderPicker({
       setVerificationWarnings([]);
       setProgress("Saving folder…");
       const workflow = library.workflow || "library";
-      if (
-        current.current?.workflow !== workflow ||
-        (workflow === "bookdrop" &&
-          current.current?.integration_id !== library.integration_id)
-      ) {
+      // Each library (or Bookdrop) keeps its own folder for this format.
+      const matches = (row: Destination) =>
+        row.medium === medium &&
+        row.workflow === workflow &&
+        (workflow === "bookdrop"
+          ? row.integration_id === library.integration_id
+          : row.library_id === library.library_id);
+      if (!current.current || !matches(current.current)) {
         const existing = result(
           await api.GET("/api/organization/destinations"),
         );
-        current.current =
-          existing.find(
-            (row) =>
-              row.medium === medium &&
-              row.workflow === workflow &&
-              (workflow === "bookdrop"
-                ? row.integration_id === library.integration_id
-                : row.library_id === library.library_id &&
-                  row.backend_path === backendPath),
-          ) ||
-          (workflow === "library"
-            ? existing.find(
-                (row) =>
-                  row.workflow === "library" &&
-                  row.root_key === `library-${medium}`,
-              )
-            : undefined);
+        current.current = existing.find(matches);
       }
       const destination = result(
         await api.PUT("/api/organization/library-folders/{medium}", {
@@ -583,14 +674,8 @@ function FolderPicker({
             mode: bookdrop || copyOnly ? "copy" : "hardlink",
             backend_path: backendPath,
             local_path: workerPath,
-            destination_id:
-              current.current?.workflow === (library.workflow || "library")
-                ? current.current.id
-                : undefined,
-            expected_revision:
-              current.current?.workflow === (library.workflow || "library")
-                ? current.current.revision
-                : undefined,
+            destination_id: current.current?.id,
+            expected_revision: current.current?.revision,
             seeding_rename: !bookdrop && seedingRename,
             client_path: !bookdrop && seedingRename ? clientPath.trim() : null,
             automatic,
@@ -637,7 +722,7 @@ function FolderPicker({
   });
   return (
     <BookDialog
-      title={`Choose ${names[medium].toLowerCase()} folder`}
+      title={`Choose ${names[medium].toLowerCase()} folder${suffix}`}
       close={() => {
         if (!save.isPending) close();
       }}

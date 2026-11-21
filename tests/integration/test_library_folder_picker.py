@@ -2,6 +2,7 @@
 from uuid import UUID
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.api import library_folders
@@ -11,8 +12,13 @@ from app.db.models import (
     ImportDestination,
     ImportEntry,
     ImportStorageSettings,
+    Integration,
     Library,
+    LibraryGrant,
+    User,
 )
+from app.domain.destination_defaults import destination_default
+from app.domain.release_profiles import profile_snapshot
 from app.importing import destinations
 from app.importing.storage import storage_settings
 from app.jobs.queue import get_queue
@@ -370,3 +376,120 @@ async def test_picker_refuses_nested_staging_for_grimmory(
 async def storage_settings_for_test(database):
     async with database() as db:
         return await storage_settings(db)
+
+
+async def second_library(database, first_id):
+    """Another library server's library, answered by the same synthetic ABS folder."""
+    async with database() as db, db.begin():
+        first = await db.get(Library, UUID(first_id))
+        connection = await db.get(Integration, first.integration_id)
+        other = Integration(
+            name="Second ABS",
+            kind="audiobookshelf",
+            base_url="http://second-fixture",
+            encrypted_secrets=connection.encrypted_secrets,
+            status="connected",
+            enabled=True,
+        )
+        db.add(other)
+        await db.flush()
+        library = Library(
+            integration_id=other.id,
+            external_id=first.external_id,
+            name="Library B",
+            accessible=True,
+            last_complete_sync=first.last_complete_sync,
+        )
+        db.add(library)
+        await db.flush()
+        return str(library.id)
+
+
+async def test_each_library_keeps_its_own_audio_folder(
+    client, admin, database, empty_route, monkeypatch
+):
+    route = empty_route
+    monkeypatch.setattr(library_folders, "Audiobookshelf", route["backend"].client)
+    monkeypatch.setattr(get_settings(), "import_destinations", {})
+    monkeypatch.setattr(get_settings(), "import_staging_root", None)
+    first_library = route["destination"]["library_id"]
+    libraries = {"a": first_library, "b": await second_library(database, first_library)}
+    folders = {}
+    for name, library_id in libraries.items():
+        local = route["target"].parent / f"audiobooks-{name}"
+        local.mkdir()
+        response = await client.put(
+            "/api/organization/library-folders/audio",
+            json={"library_id": library_id, "backend_path": "/books", "local_path": str(local)},
+        )
+        assert response.status_code == 200, response.text
+        chosen = response.json()
+        probe = await start(client, {**route, "destination": chosen}, key=f"library-probe-{name}")
+        assert probe.status_code == 202, probe.text
+        await get_queue().run_worker_async(wait=False, concurrency=1)
+        activated = await client.post(
+            f"/api/organization/library-folders/{chosen['id']}/activate",
+            json={"expected_revision": chosen["revision"]},
+        )
+        assert activated.status_code == 200, activated.text
+        folders[name] = (chosen, local)
+    first, second = (folders[name][0] for name in "ab")
+    assert first["id"] != second["id"]
+    assert first["root_key"] == "library-audio"
+    assert second["root_key"].startswith("library-audio-") and len(second["root_key"]) <= 60
+    mounted = await storage_settings_for_test(database)
+    for chosen, local in folders.values():
+        staging = mounted.import_storage_routes[chosen["root_key"]].staging_root
+        assert staging == local / ".book-search-staging" and staging.is_dir()
+    # Activating another library's folder keeps the earlier default.
+    for scope in ["personal", "installation"]:
+        defaults = (await client.get(f"/api/acquisition/preferences/{scope}")).json()["effective"]
+        assert defaults["audio_library_id"] == first_library
+        assert defaults["audio_destination_id"] == first["id"]
+    async with database() as db:
+        assert all(policy.enabled for policy in await db.scalars(select(AutomaticImportPolicy)))
+        user = await db.get(User, UUID(admin["id"]))
+        chosen = await destination_default(
+            db, user, "audio", UUID(libraries["b"]), UUID(first["id"])
+        )
+        assert chosen.id == UUID(second["id"])
+        with pytest.raises(HTTPException) as unclear:
+            await destination_default(db, user, "audio", None, None)
+        assert "Choose the audiobook library for this request" in unclear.value.detail
+    # A member who can only use library B inherits neither library A nor its folder.
+    async with database() as db, db.begin():
+        member = User(username="member", display_name="Member", role="member")
+        db.add(member)
+        await db.flush()
+        db.add(LibraryGrant(user_id=member.id, library_id=UUID(libraries["b"])))
+        member_id = member.id
+    async with database() as db:
+        member = await db.get(User, member_id)
+        profile = await profile_snapshot(db, member_id)
+        assert profile.preferences.audio_library_id is None
+        assert profile.preferences.audio_destination_id is None
+        chosen = await destination_default(
+            db, member, "audio", None, profile.preferences.audio_destination_id
+        )
+        assert chosen.id == UUID(second["id"])
+    # Deleting one library's folder leaves the other library's folder and defaults alone.
+    current = {
+        row["id"]: row for row in (await client.get("/api/organization/destinations")).json()
+    }
+    deleted = await client.delete(
+        f"/api/organization/destinations/{second['id']}",
+        params={"expected_revision": current[second["id"]]["revision"]},
+    )
+    assert deleted.status_code == 204, deleted.text
+    remaining = (await client.get("/api/organization/destinations")).json()
+    assert [row["id"] for row in remaining if row["medium"] == "audio"] == [first["id"]]
+    assert next(row for row in remaining if row["id"] == first["id"])["publication_available"]
+    defaults = (await client.get("/api/acquisition/preferences/installation")).json()["effective"]
+    assert defaults["audio_destination_id"] == first["id"]
+    async with database() as db:
+        policy = await db.scalar(
+            select(AutomaticImportPolicy).where(
+                AutomaticImportPolicy.destination_id == UUID(first["id"])
+            )
+        )
+        assert policy.enabled

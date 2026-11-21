@@ -152,18 +152,18 @@ export default function RouteFields({
             The only enabled client of each type is used automatically. When
             several clients share a type, choose a default here. Soulseek uses
             its own connection for searches and downloads. Destinations use the
-            folders configured in Libraries, separately for ebooks and
-            audiobooks. Download folders remain configured on each client.
-            Automatic imports still require a verified connection between those
-            folders. Saved requests keep their accepted choices.
+            folder configured in Libraries for the chosen library, separately
+            for ebooks and audiobooks. Download folders remain configured on
+            each client. Automatic imports still require a verified connection
+            between those folders. Saved requests keep their accepted choices.
           </SettingHelp>
         </span>
       </summary>
 
       <p className="muted">
-        Finished books use the folders configured in Libraries. Each download
-        client keeps its own download folder; Dewarr imports from there into
-        your ebook or audiobook library.
+        Finished books use the chosen library’s folder in Libraries. Each
+        download client keeps its own download folder; Dewarr imports from there
+        into your ebook or audiobook library.
       </p>
       <Notice error={options.error} />
       {downloaderFields.map(({ field, protocol }) => {

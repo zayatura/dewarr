@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 from sqlalchemy import and_, literal, select
 from sqlalchemy.orm import aliased
 
-from app.db.models import AcquisitionDefaults, AcquisitionProfile
+from app.db.models import AcquisitionDefaults, AcquisitionProfile, ImportDestination, Library, User
 from app.domain import narrators
 from app.domain.catalog_titles import optional_subtitle_base, parse_title_labels
 from app.domain.indexer_labels import indexer_language, indexer_suffixes, label_language
@@ -22,6 +22,7 @@ from app.domain.series_identity import (
     title_outside_series_prefix,
 )
 from app.domain.title_matching import compatible_title
+from app.domain.visibility import visible_library
 from app.importing.naming import fingerprint
 
 FORMATS = {
@@ -211,14 +212,48 @@ async def default_layers(db, user_id=None):
             .execution_options(populate_existing=True)
         )
     }
-    return [
-        (
-            "Installation default" if key == "installation" else "Personal default",
-            rows[key].preferences,
-        )
-        for key in keys
-        if key in rows
-    ]
+    return await accessible_layers(
+        db,
+        user_id,
+        [
+            (
+                "Installation default" if key == "installation" else "Personal default",
+                rows[key].preferences,
+            )
+            for key in keys
+            if key in rows
+        ],
+    )
+
+
+async def accessible_layers(db, user_id, layers):
+    """Members inherit installation libraries and folders only when they can use them."""
+    user = await db.get(User, user_id) if user_id else None
+    if not user or user.role == "admin":
+        return layers
+    result = []
+    for label, values in layers:
+        if label == "Installation default":
+            values = dict(values)
+            for medium in ("ebook", "audio"):
+                library_key, destination_key = medium + "_library_id", medium + "_destination_id"
+                if values.get(library_key) and not await db.scalar(
+                    select(Library.id).where(
+                        Library.id == UUID(str(values[library_key])), visible_library(user)
+                    )
+                ):
+                    del values[library_key]
+                if values.get(destination_key) and not await db.scalar(
+                    select(ImportDestination.id)
+                    .join(Library, Library.id == ImportDestination.library_id)
+                    .where(
+                        ImportDestination.id == UUID(str(values[destination_key])),
+                        visible_library(user),
+                    )
+                ):
+                    del values[destination_key]
+        result.append((label, values))
+    return result
 
 
 async def profile_snapshot(db, user_id, identifier=None, generation=None, expected_revision=None):
@@ -246,14 +281,18 @@ async def profile_snapshot(db, user_id, identifier=None, generation=None, expect
             .outerjoin(saved, and_(saved.id == identifier, saved.owner_id == user_id))
         )
     ).one()
-    layers = [
-        (label, values)
-        for label, values in [
-            ("Installation default", row.installation),
-            ("Personal default", row.personal),
-        ]
-        if values is not None
-    ]
+    layers = await accessible_layers(
+        db,
+        user_id,
+        [
+            (label, values)
+            for label, values in [
+                ("Installation default", row.installation),
+                ("Personal default", row.personal),
+            ]
+            if values is not None
+        ],
+    )
     if identifier is None:
         if generation not in (None, 0):
             raise HTTPException(422, "Choose a saved profile before specifying its revision")
