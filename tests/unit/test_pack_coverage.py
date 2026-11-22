@@ -263,3 +263,38 @@ def test_target_format_preference_cannot_be_satisfied_by_a_siblings_encoding():
         descriptor=files,
         catalog=CATALOG,
     )
+
+
+@pytest.mark.parametrize(
+    ("position", "title", "same_book"),
+    [
+        ("6", "Harbor Lights: The Harbor Cycle, Part One", True),
+        ("6.0", "Harbor Lights: The Harbor Cycle, Part One", True),
+        ("5", "Harbor Lights: The Harbor Cycle, Part One", False),
+        (None, "Harbor Lights: The Harbor Cycle, Part One", False),
+        ("6", "Harbor Lights: Volume 2", False),
+        ("6", "Other Book: The Harbor Cycle, Part One", False),
+    ],
+)
+def test_source_subtitle_names_the_book_at_its_own_series_position(position, title, same_book):
+    from app.domain.release_profiles import assess_release
+
+    work = {
+        "title": "Harbor Lights",
+        "authors": ["Writer"],
+        "series": [{"name": "Coast", "position": "6"}],
+    }
+    catalog = {"series": [{"name": "Coast", "members": []}]}
+    value = release().model_copy(
+        update={
+            "title": title,
+            "raw_title": title,
+            "series": [SourceSeries(source_id="coast", name="Coast", position=position)]
+            if position
+            else [],
+        }
+    )
+    identity = assess_release(value, work, ReleasePreferences(), "audio").identity
+    assert (identity == "corroborated") is same_book
+    if position and title.startswith("Harbor Lights"):
+        assert collection_candidate(value, work, catalog) is not same_book

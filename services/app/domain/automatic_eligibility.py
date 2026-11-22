@@ -6,7 +6,11 @@ from pathlib import PurePosixPath
 from app.domain import pack_coverage
 from app.domain.acquisition import language_accepts
 from app.domain.audio_manifest import distinct_numbered_tracks, single_part_name
-from app.domain.release_profiles import assess_release, catalog_language_release
+from app.domain.release_profiles import (
+    assess_release,
+    catalog_language_release,
+    series_book_title,
+)
 from app.domain.release_versions import abridgment, version_reasons
 from app.domain.request_constraints import constrained_preferences
 from app.domain.title_matching import compatible_title
@@ -39,6 +43,8 @@ def collection_candidate(release, work, catalog=None):
             # Series membership alone does not make a single book a collection.
             # Use the same title equivalence as source identity (e.g. & / and).
             and not compatible_title(getattr(release, "title", release.raw_title), work["title"])
+            # Nor does a source subtitle on a release placed at the book's own position.
+            and not series_book_title(getattr(release, "title", release.raw_title), release, work)
         )
     )
 

@@ -573,11 +573,35 @@ def catalog_language_release(release, work):
     return release.model_copy(update={"language": language, "details": details})
 
 
+def series_position_agrees(release, work):
+    """The source's own series data places the release at this book's catalog position."""
+    from app.domain.series_identity import position_key, series_name
+
+    catalog = {
+        (series_name(item["name"]), position_key(item.get("position")))
+        for item in work.get("series") or []
+        if position_key(item.get("position")) is not None
+    }
+    return any(
+        (series_name(item.name), position_key(item.position)) in catalog
+        for item in getattr(release, "series", None) or []
+        if position_key(item.position) is not None
+    )
+
+
+def series_book_title(title, release, work):
+    """A source-only subtitle ("Title: The Harbor Cycle, Part One") names the same book
+    when the source also places it at that book's own series position."""
+    return compatible_title(title, work["title"], allow_extra_subtitle=True) and (
+        series_position_agrees(release, work)
+    )
+
+
 def assess_release(release, work, preferences, medium="all"):
     release = catalog_language_release(release, work)
     raw, part, dramatized = release_labels(getattr(release, "title", release.raw_title))
     title, expected = normalized(raw), normalized(parse_title_labels(work["title"]).title)
-    title_agrees = compatible_title(raw, work["title"])
+    title_agrees = compatible_title(raw, work["title"]) or series_book_title(raw, release, work)
     authors = {normalized(a) for a in release.authors}
     work_authors = {normalized(a) for a in work["authors"]}
     known = set().union(*(identifier_values(value) for value in work.get("identifiers") or []))
