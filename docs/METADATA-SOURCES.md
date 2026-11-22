@@ -13,6 +13,17 @@ Hardcover remains the default work catalog. Additional sources have specific job
 
 Existing Libro.fm upcoming and library enrichment remains in place.
 
+## Books from Hardcover series and lists
+
+Loading a Hardcover series page or following a Hardcover list adds books that are not
+yet in the catalog as private placeholders: title, author and the listing's cover, with
+the exact Hardcover book recorded beside them. Loading a series costs one series lookup,
+not one per book. When someone requests a placeholder, or a library copy is filed under
+it, Dewarr links that exact Hardcover book, as adding it from a search would, instead of
+searching by title. The link is skipped when the recorded book's title or author no
+longer agrees. A later series or list load uses the linked book rather than an older
+placeholder for the same Hardcover record.
+
 ## Recording safety
 
 The enrichment worker checks the work identity, source revision, settings, reader access,

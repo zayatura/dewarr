@@ -3,7 +3,7 @@ from copy import deepcopy
 from uuid import UUID
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.adapters.catalog_types import BookData
 from app.adapters.contracts import AdapterError, FailureKind
@@ -465,3 +465,112 @@ async def test_incomplete_metadata_keeps_valid_series_books_and_about_facts(
     all_entries = await detail(client, section="all")
     assert all_entries["items"][1]["metadata_incomplete"]
     assert all_entries["items"][1]["work"]["title"] == "Untitled"
+
+
+async def test_a_requested_series_placeholder_links_its_known_hardcover_book(
+    client, database, service, admin, monkeypatch
+):
+    """Series entries name the exact Hardcover book; a request links it without a search."""
+    from app.api import metadata
+    from app.db.models import ListCatalogBinding, Work, WorkMetadataSource
+    from app.domain import library_matching
+    from app.domain.hardcover_subscriptions import catalog_match
+    from tests.integration.test_acquisition import request
+
+    cover = "https://covers.example/43.jpg"
+    service.items = [
+        {
+            **record(1, 43),
+            "book": BookData(
+                provider="hardcover",
+                external_id="43",
+                title="Book 43",
+                authors=["Writer"],
+                cover_url=cover,
+            ).model_dump(mode="json"),
+        }
+    ]
+    assert await finish(database, await start(client)) == "completed"
+    item = (await detail(client))["items"][0]
+    work_id = UUID(item["work"]["id"])
+    async with database() as db:
+        stub = await db.get(Work, work_id)
+        # The listing's cover shows on shelves before anyone links the book.
+        assert stub.provisional and stub.cover_url == cover
+        assert not await db.scalar(
+            select(WorkMetadataSource.id).where(WorkMetadataSource.work_id == work_id)
+        )
+
+    calls = []
+    full = BookData(
+        provider="hardcover",
+        external_id="43",
+        title="Book 43",
+        authors=["Writer"],
+        cover_url=cover,
+        description="The whole record.",
+    )
+
+    async def provider_call(db, user_id, provider, operation, *args):
+        calls.append((operation, *args))
+        await db.rollback()
+        assert operation == "fetch", "The known book needs no search"
+        return full, False, None
+
+    monkeypatch.setattr(metadata, "provider_call", provider_call)
+    await request(client, {"work_id": str(work_id), "specification": {"mode": "audio"}})
+    async with database() as db:
+        queued = await db.scalar(
+            select(func.count())
+            .select_from(text("book_queue.procrastinate_jobs"))
+            .where(text("task_name = 'catalog.link-known'"))
+        )
+        assert queued == 1
+    await library_matching.link_known(work_id)
+    assert calls == [("fetch", "43")]
+    async with database() as db:
+        work = await db.get(Work, work_id)
+        source = await db.scalar(
+            select(WorkMetadataSource).where(WorkMetadataSource.work_id == work_id)
+        )
+        assert source and source.accepted and source.external_id == "43"
+        assert not work.provisional and work.description == "The whole record."
+
+    # Another reader's old placeholder for the same book gives way to the linked one.
+    async with database() as db, db.begin():
+        reader = User(
+            username="series-reader",
+            display_name="Reader",
+            password_hash="unused",
+            role="member",
+        )
+        db.add(reader)
+        await db.flush()
+        old = Work(
+            title="Book 43",
+            authors=["Writer"],
+            provisional=True,
+            catalog_public=False,
+            catalog_owner_id=reader.id,
+        )
+        db.add(old)
+        await db.flush()
+        binding = ListCatalogBinding(
+            owner_id=reader.id,
+            identity_key="hardcover:43",
+            work_id=old.id,
+            assertion={"title": "Book 43", "authors": ["Writer"], "isbn": None, "isbn13": None},
+        )
+        db.add(binding)
+        work.catalog_public = True
+        db.add(work)
+    async with database() as db, db.begin():
+        reader = await db.scalar(select(User).where(User.username == "series-reader"))
+        matched = await catalog_match(
+            db, reader, {"external_id": "43", "title": "Book 43", "authors": ["Writer"]}
+        )
+        assert matched.id == work_id
+        binding = await db.scalar(
+            select(ListCatalogBinding).where(ListCatalogBinding.owner_id == reader.id)
+        )
+        assert binding.work_id == work_id

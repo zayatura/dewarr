@@ -21,7 +21,7 @@ from app.db.session import session_factory
 from app.domain.catalog_network import CatalogGateway
 from app.domain.list_subscriptions import apply_records, context, next_due
 from app.domain.visibility import visible_origin_work, visible_work
-from app.domain.work_graph import canonical_work
+from app.domain.work_graph import canonical_work, family_ids
 from app.jobs.retry import ShelfRetry
 from app.security import decrypt_secrets, encrypt_secrets
 
@@ -107,10 +107,11 @@ async def catalog_match(db, owner, record):
             ListCatalogBinding.owner_id == owner.id, ListCatalogBinding.identity_key == key
         )
     )
+    bound = None
     if binding:
         work = await canonical_work(db, binding.work_id)
         if await db.scalar(select(Work.id).where(Work.id == work.id, visible_work(owner))):
-            return work
+            bound = work
     sources = (
         await db.scalars(
             select(Work)
@@ -124,12 +125,20 @@ async def catalog_match(db, owner, record):
         )
     ).all()
     roots = {work.id: work for work in [await canonical_work(db, w.id) for w in sources]}
-    if len(roots) == 1:
-        work = next(iter(roots.values()))
+    linked = next(iter(roots.values())) if len(roots) == 1 else None
+    if bound and (not linked or linked.id == bound.id or not await placeholder(db, bound)):
+        return bound
+    if linked:
+        # The book was linked to this Hardcover record since this placeholder was made,
+        # perhaps from someone else's request. Use it instead of the placeholder.
+        work = linked
+        if binding:
+            binding.work_id = work.id
     else:
         work = Work(
             title=record["title"],
             authors=record["authors"],
+            cover_url=record.get("cover_url") or None,
             provisional=True,
             catalog_public=False,
             catalog_owner_id=owner.id,
@@ -146,6 +155,16 @@ async def catalog_match(db, owner, record):
             )
         )
     return work
+
+
+async def placeholder(db, work):
+    """A book made only from a series or list entry: never linked to Hardcover."""
+    return work.provisional and not await db.scalar(
+        select(WorkMetadataSource.id).where(
+            WorkMetadataSource.work_id.in_(family_ids(work.id)),
+            WorkMetadataSource.provider == "hardcover",
+        )
+    )
 
 
 async def run(operation_id):

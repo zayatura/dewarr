@@ -901,6 +901,9 @@ async def submit(
         )
         db.add(intent)
         await db.flush()
+        from app.domain.library_matching import schedule_known_link
+
+        await schedule_known_link(db, work_id)
     kind, reference = ("list", str(reason.list_id)) if reason.list_id else ("manual", "manual")
     reference = policy_reference or reference
     if series_reference is not None:

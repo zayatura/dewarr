@@ -578,14 +578,18 @@ async def reader_lookup_identity(db, user, work_id):
         },
         key=str,
     )
+    from app.domain.catalog_bindings import known_hardcover
+
+    known = await known_hardcover(db, work.id)
     evidence = MatchEvidence(
         title=work.title,
         authors=work.authors,
         language=work.language,
         identifiers=identifiers,
         series=series,
+        hardcover_id=(known or (None,))[0],
     )
-    return (work.id, evidence.model_dump_json())
+    return (work.id, evidence.key())
 
 
 @router.get("/works/{work_id}/reader-match", response_model=ReaderMatch)

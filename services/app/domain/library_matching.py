@@ -27,7 +27,7 @@ from app.db.models import (
 )
 from app.db.session import session_factory
 from app.domain.catalog_metadata import attach_source, preferences
-from app.domain.work_graph import family_ids
+from app.domain.work_graph import canonical_work, family_ids
 from app.jobs.queue import enqueue
 
 TERMINAL = {"completed", "cancelled", "failed"}
@@ -359,3 +359,82 @@ async def record(db, owner_id, work_id, identity, fingerprint, result):
     work.metadata_fields = {**work.metadata_fields, "auto_match": outcome}
     await db.commit()
     return saved
+
+
+async def schedule_known_link(db, work_id):
+    """Queue linking a requested book to the Hardcover book its series or list named.
+
+    Placeholders from a series page or followed list carry only a title and an author.
+    Once someone asks for the book, it is worth one Hardcover lookup to give it its
+    cover, description and series, as adding it from a search would.
+    """
+    from app.domain.catalog_bindings import known_hardcover
+
+    if get_settings().recovery_mode or not (await preferences(db)).automatic_enrichment:
+        return None
+    decided = await db.scalar(
+        select(WorkMetadataSource.id).where(
+            WorkMetadataSource.work_id.in_(family_ids(work_id)),
+            WorkMetadataSource.provider == "hardcover",
+        )
+    )
+    if decided or not await known_hardcover(db, work_id):
+        return None
+    return await enqueue(
+        db, "catalog.link-known", work_id=str(work_id), job_lock=f"link-known:{work_id}"
+    )
+
+
+async def link_known(work_id):
+    """Save the Hardcover book a series page or followed list already named for this book."""
+    from app.api.metadata import provider_call, reader_lookup_identity
+    from app.domain.catalog_bindings import known_hardcover
+    from app.domain.hardcover_matching import MatchEvidence, known_book
+    from app.jobs.retry import CatalogRetry
+
+    if get_settings().recovery_mode:
+        raise CatalogRetry(60)
+    db = session_factory()()
+    try:
+        work_id = (await canonical_work(db, work_id)).id
+        known = await known_hardcover(db, work_id)
+        if not known:
+            return
+        external_id, owners = known
+        # Ask with the account of someone who saw this book on Hardcover.
+        for owner_id in owners:
+            user = await db.get(User, owner_id)
+            account = await db.get(CatalogAccount, owner_id)
+            if user and user.active and account and account.enabled:
+                break
+        else:
+            return
+        try:
+            identity = await reader_lookup_identity(db, user, work_id)
+        except HTTPException:
+            return
+        if not identity:
+            return
+        evidence = MatchEvidence.model_validate_json(identity[1])
+        if evidence.hardcover_id != external_id:
+            return
+        await db.rollback()
+
+        async def call(operation_name, *args):
+            return await provider_call(db, owner_id, "hardcover", operation_name, *args)
+
+        try:
+            result = await known_book(evidence, call)
+        except AdapterError as error:
+            await db.rollback()
+            if error.kind in {FailureKind.RATE_LIMIT, FailureKind.UNAVAILABLE, FailureKind.TIMEOUT}:
+                raise CatalogRetry(error.retry_after) from None
+            return
+        except HTTPException:
+            # The Hardcover connection changed during the lookup.
+            await db.rollback()
+            return
+        if result:
+            await record(db, owner_id, work_id, identity, evidence_hash(identity), result)
+    finally:
+        await db.close()

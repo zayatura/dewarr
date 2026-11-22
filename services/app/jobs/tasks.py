@@ -218,6 +218,15 @@ async def match_library_books(operation_id: str) -> None:
     await match_library(UUID(operation_id))
 
 
+@tasks.task(
+    name="catalog.link-known", queue="metadata", retry=CatalogRetryStrategy(max_attempts=3, wait=60)
+)
+async def link_known_book(work_id: str) -> None:
+    from app.domain.library_matching import link_known
+
+    await link_known(UUID(work_id))
+
+
 @tasks.task(name="library.combine", queue="imports", retry=RetryStrategy(max_attempts=3, wait=60))
 async def combine_library_parts(operation_id: str) -> None:
     from app.importing.combine import run

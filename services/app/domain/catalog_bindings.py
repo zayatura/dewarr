@@ -132,3 +132,28 @@ async def displayed_provider_works(db, user, provider, books):
             }
         )
     return matched
+
+
+async def known_hardcover(db, work_id):
+    """The one Hardcover book that series pages or followed lists named for this book.
+
+    Returns ``(external_id, owner_ids)``, where the owners are the people whose
+    Hardcover account saw it, or None when no binding or several disagree.
+    """
+    from app.db.models import ListCatalogBinding
+    from app.domain.work_graph import family_ids
+
+    rows = (
+        await db.execute(
+            select(ListCatalogBinding.identity_key, ListCatalogBinding.owner_id)
+            .where(
+                ListCatalogBinding.work_id.in_(family_ids(work_id)),
+                ListCatalogBinding.identity_key.startswith("hardcover:"),
+            )
+            .order_by(ListCatalogBinding.created_at, ListCatalogBinding.id)
+        )
+    ).all()
+    ids = {key.removeprefix("hardcover:") for key, _ in rows}
+    if len(ids) != 1:
+        return None
+    return ids.pop(), list(dict.fromkeys(owner for _, owner in rows))

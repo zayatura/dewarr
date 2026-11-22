@@ -66,6 +66,7 @@ async def recover_stalled_jobs() -> None:
                 "metadata.enrich",
                 "catalog.refresh",
                 "library.match",
+                "catalog.link-known",
                 "library.combine",
                 "metadata.resolve-import",
                 "acquisition.evaluate",

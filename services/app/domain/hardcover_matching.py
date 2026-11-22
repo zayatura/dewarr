@@ -26,6 +26,12 @@ class MatchEvidence(BaseModel):
     identifiers: list[tuple[str, str]] = Field(default_factory=list)
     # Series name and position the library reports, such as ("Red Rising Saga", "5").
     series: list[tuple[str, str | None]] = Field(default_factory=list)
+    # The Hardcover book a series page or followed list already named for this book.
+    hardcover_id: str | None = None
+
+    def key(self):
+        """Stable JSON; books without a known Hardcover book keep their earlier key."""
+        return self.model_dump_json(exclude={"hardcover_id"} if not self.hardcover_id else None)
 
 
 class MatchResult(BaseModel):
@@ -165,20 +171,61 @@ def compatible(evidence, book, *, identified=False, series_title=False):
     return True
 
 
-async def lookup(evidence, call):
-    async def canonical(book):
-        seen = set()
-        for _ in range(4):
-            key = book.canonical_id or book.external_id
-            if key in seen:
-                return None
-            seen.add(key)
-            book, stale, _ = await call("fetch", key)
-            if stale or book.external_id != key:
-                return None
-            if book.canonical_id in (None, book.external_id):
-                return book
+async def current(key, call):
+    """Hardcover's current record for a book ID, following merges; None if unclear."""
+    seen = set()
+    for _ in range(4):
+        if key in seen:
+            return None
+        seen.add(key)
+        book, stale, _ = await call("fetch", key)
+        if stale or book.external_id != key:
+            return None
+        if book.canonical_id in (None, book.external_id):
+            return book
+        key = book.canonical_id
+    return None
+
+
+async def known_book(evidence, call):
+    """The Hardcover book already named for this book, when its title and author agree.
+
+    A series page or followed list recorded the exact book, so no search is needed.
+    The check only guards against the record having changed since.
+    """
+    if not evidence.hardcover_id:
         return None
+    try:
+        book = await current(evidence.hardcover_id, call)
+    except AdapterError as error:
+        if error.kind == FailureKind.NOT_FOUND:
+            return None
+        raise
+    if not book:
+        return None
+    a, b = authors_key(identity_authors(evidence.authors)[0]), authors_key(book.authors)
+    if not (a & b) or not compatible_title(
+        matching_title(parse_title_labels(evidence.title).title),
+        matching_title(book.title),
+        identified=True,
+        allow_extra_subtitle=True,
+    ):
+        return None
+    return MatchResult(
+        book=book,
+        status="matched",
+        basis="known",
+        reason="The series or list this book came from names this Hardcover book.",
+    )
+
+
+async def lookup(evidence, call):
+    known = await known_book(evidence, call)
+    if known:
+        return known
+
+    async def canonical(book):
+        return await current(book.canonical_id or book.external_id, call)
 
     async def resolve(candidates):
         """Full canonical records, fetched in one request when there are several."""
