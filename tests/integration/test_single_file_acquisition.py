@@ -87,6 +87,7 @@ OTHER_LANGUAGE = {
         "reviewer",
         "automatic",
         "automatic-author-conflict",
+        "automatic-author-conflict-admin",
         "automatic-audio",
         "automatic-provider",
         "automatic-provider-audio",
@@ -228,7 +229,7 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             if handoff in {"automatic-multiple-isbns", "automatic-multiple-isbns-unlisted"}
             else None,
             author="Alex Morgan; Other Writer"
-            if handoff == "automatic-author-conflict"
+            if handoff in {"automatic-author-conflict", "automatic-author-conflict-admin"}
             else "Alex Morgan;"
             if handoff in {"automatic", "automatic-unmatched"}
             else "Alex Morgan",
@@ -557,6 +558,23 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             assert not (await owner_client.get(f"/api/catalog/works/{old['work_id']}")).json()[
                 "availability"
             ]["owned"]
+        if handoff == "automatic-author-conflict-admin":
+            # An administrator confirms the shown disagreement and the import continues.
+            endpoint = f"/api/organization/inspections/{auto.inspection_id}"
+            download = (await review_account[0].get(endpoint)).json()["download"]
+            assert download["confirmation"], download
+            stale = await review_account[0].post(endpoint + "/accept", json={"confirmation": "old"})
+            assert stale.status_code == 409
+            accepted = await review_account[0].post(
+                endpoint + "/accept", json={"confirmation": download["confirmation"]}
+            )
+            assert accepted.status_code == 202, accepted.text
+            await get_queue().run_worker_async(wait=False, concurrency=1)
+            async with database() as db:
+                auto = await db.scalar(select(AutomaticImport))
+                assert auto.state == "importing", (auto.message, auto.evidence)
+                assert auto.evidence["requester_confirmation"]["user_id"] != admin["id"]
+            return
         if handoff == "automatic-author-conflict":
             context = await review_account[0].get(
                 f"/api/organization/inspections/{auto.inspection_id}"
@@ -566,6 +584,27 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
                 "The files name a different author" in context.json()["download"]["file_conflicts"]
             )
             assert context.json()["download"]["destination_id"] == route["destination"]["id"]
+            # Contradictory tags are the requester's call; they can confirm and import.
+            from app.domain import permissions
+
+            async with database() as db, db.begin():
+                (await db.get(User, UUID(admin["id"]))).permissions = (
+                    permissions.MEMBER | permissions.REVIEW_OWN_DOWNLOADS
+                )
+            endpoint = f"/api/acquisition/downloads/{auto.attempt_id}/review"
+            own = (await owner_client.get(endpoint)).json()
+            assert own["can_add"], own
+            assert {"field": "authors", "message": "The files name a different author"} in own[
+                "mismatches"
+            ]
+            accepted = await owner_client.post(
+                endpoint + "/accept", json={"confirmation": own["confirmation"]}
+            )
+            assert accepted.status_code == 202, accepted.text
+            await get_queue().run_worker_async(wait=False, concurrency=1)
+            async with database() as db:
+                auto = await db.scalar(select(AutomaticImport))
+                assert auto.state == "importing", (auto.message, auto.evidence)
         if handoff in OTHER_LANGUAGE:
             # The hold names the disagreement, and the reviewer can send the release back.
             reason = "The files are in German, but this request expects English"

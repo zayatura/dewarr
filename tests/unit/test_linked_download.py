@@ -432,7 +432,7 @@ def test_release_subtitle_at_the_books_series_position_does_not_hold_the_import(
     )
 
 
-def test_requesters_confirm_only_title_author_and_language_differences():
+def test_requesters_confirm_title_author_and_language_but_not_identifiers():
     from app.importing.linked_download import RequestFileMatch, confirmable
 
     def decision(*fields, conflicts=()):
@@ -449,9 +449,9 @@ def test_requesters_confirm_only_title_author_and_language_differences():
     assert confirmable(decision("language")) != confirmable(decision("release_title"))
     assert confirmable(decision()) is None
     assert confirmable(decision("identifiers")) is None
-    assert (
-        confirmable(decision("language", conflicts=["The files use a different language"])) is None
-    )
+    # Contradictory tags are the requester's call too ("HL" for "Harbor Lights").
+    assert confirmable(decision("title", conflicts=["The files name a different book"]))
+    assert confirmable(decision("title", "identifiers", conflicts=["Bad identifier"])) is None
 
 
 def test_resolving_own_reviews_keeps_the_member_label():

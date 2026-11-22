@@ -391,185 +391,204 @@ for (const scenario of [
   });
 }
 
-test("download review compares the request with the files and rejects the release", async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  const rejections: unknown[] = [];
-  const reason = "The files are in German, but this request expects English";
-  const path = "Author A - Harbor Lights.m4b";
-  await page.route("**/api/**", async (route) => {
-    const url = new URL(route.request().url()).pathname;
-    let data: unknown = { items: [], total: 0 };
-    if (url === "/api/auth/me")
-      data = {
-        user: {
-          id: "reader",
-          role: "admin",
-          username: "reader",
-          display_name: "Reader",
-        },
-        csrf_token: "test",
-      };
-    else if (url === "/api/setup/onboarding") data = { status: "completed" };
-    else if (url === "/api/organization/inspections/download")
-      data = {
-        id: "download",
-        state: "ready",
-        relative_path: "Harbor Lights",
-        plan_id: null,
-        snapshot: {
-          revision: "inspection-revision",
-          files: [
-            {
-              path,
-              extension: "m4b",
-              identity: { size: 5242880 },
-              technical: {
-                duration: 56024,
-                codec: "aac",
-                tags: {
-                  album: "Harbor Lights",
-                  artist: "Author A",
-                  composer: "Narrator B",
-                  language: "Deutsch",
+for (const mode of ["reject", "accept"] as const) {
+  test(`download review compares the request with the files and can ${mode}`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    const rejections: unknown[] = [];
+    const accepts: unknown[] = [];
+    const reason = "The files are in German, but this request expects English";
+    const path = "Author A - Harbor Lights.m4b";
+    await page.route("**/api/**", async (route) => {
+      const url = new URL(route.request().url()).pathname;
+      let data: unknown = { items: [], total: 0 };
+      if (url === "/api/auth/me")
+        data = {
+          user: {
+            id: "reader",
+            role: "admin",
+            username: "reader",
+            display_name: "Reader",
+          },
+          csrf_token: "test",
+        };
+      else if (url === "/api/setup/onboarding") data = { status: "completed" };
+      else if (url === "/api/organization/inspections/download")
+        data = {
+          id: "download",
+          state: "ready",
+          relative_path: "Harbor Lights",
+          plan_id: null,
+          snapshot: {
+            revision: "inspection-revision",
+            files: [
+              {
+                path,
+                extension: "m4b",
+                identity: { size: 5242880 },
+                technical: {
+                  duration: 56024,
+                  codec: "aac",
+                  tags: {
+                    album: "Harbor Lights",
+                    artist: "Author A",
+                    composer: "Narrator B",
+                    language: "Deutsch",
+                  },
                 },
+                medium: "audio",
+                state: "inspected",
               },
-              medium: "audio",
-              state: "inspected",
-            },
-          ],
-        },
-        download: {
-          attempt_id: "attempt",
-          work_id: "book",
-          title: "Harbor Lights",
-          authors: ["Author A"],
-          medium: "audio",
-          destination: "/media/audiobooks",
-          destination_id: "destination",
-          mode: "hardlink",
-          state: "held",
-          can_retry: true,
-          file_conflicts: [],
-          message: reason,
-          mismatches: [{ field: "language", message: reason }],
-          expected_language: "English",
-          expected_language_source: "settings",
-          release: {
-            source: "mam",
+            ],
+          },
+          download: {
+            attempt_id: "attempt",
+            work_id: "book",
             title: "Harbor Lights",
             authors: ["Author A"],
-            narrators: ["Narrator B"],
-            language: "German",
-          },
-        },
-      };
-    else if (url.endsWith("/grouping"))
-      data = {
-        revision: "grouping-revision",
-        content: {
-          groups: [
-            {
-              key: "group",
-              medium: "audio",
+            medium: "audio",
+            destination: "/media/audiobooks",
+            destination_id: "destination",
+            mode: "hardlink",
+            state: "held",
+            can_retry: true,
+            file_conflicts: [],
+            confirmation: "confirm-1",
+            message: reason,
+            mismatches: [{ field: "language", message: reason }],
+            expected_language: "English",
+            expected_language_source: "settings",
+            release: {
+              source: "mam",
               title: "Harbor Lights",
               authors: ["Author A"],
               narrators: ["Narrator B"],
-              files: [{ path, role: "media" }],
+              language: "German",
+            },
+          },
+        };
+      else if (url.endsWith("/grouping"))
+        data = {
+          revision: "grouping-revision",
+          content: {
+            groups: [
+              {
+                key: "group",
+                medium: "audio",
+                title: "Harbor Lights",
+                authors: ["Author A"],
+                narrators: ["Narrator B"],
+                files: [{ path, role: "media" }],
+              },
+            ],
+            excluded: [],
+          },
+        };
+      else if (url.endsWith("/matches"))
+        data = {
+          items: [
+            {
+              group_key: "group",
+              status: "review",
+              revision: "match-revision",
+              evidence: {
+                issues: [],
+                titles: ["harbor lights"],
+                authors: [["author a"]],
+                identifiers: [{ namespace: "isbn", value: "9783000000000" }],
+              },
+              candidates: [],
             },
           ],
-          excluded: [],
-        },
-      };
-    else if (url.endsWith("/matches"))
-      data = {
-        items: [
+          total: 1,
+        };
+      else if (url === "/api/organization/settings")
+        data = { revision: "settings-revision" };
+      else if (url === "/api/organization/destinations")
+        data = [
           {
-            group_key: "group",
-            status: "review",
-            revision: "match-revision",
-            evidence: {
-              issues: [],
-              titles: ["harbor lights"],
-              authors: [["author a"]],
-              identifiers: [{ namespace: "isbn", value: "9783000000000" }],
-            },
-            candidates: [],
+            id: "destination",
+            medium: "audio",
+            enabled: true,
+            publication_available: true,
+            backend_path: "/media/audiobooks",
+            revision: "route-revision",
+            mode: "hardlink",
           },
-        ],
-        total: 1,
-      };
-    else if (url === "/api/organization/settings")
-      data = { revision: "settings-revision" };
-    else if (url === "/api/organization/destinations")
-      data = [
-        {
-          id: "destination",
-          medium: "audio",
-          enabled: true,
-          publication_available: true,
-          backend_path: "/media/audiobooks",
-          revision: "route-revision",
-          mode: "hardlink",
-        },
-      ];
-    else if (url === "/api/organization/inspections/download/reject") {
-      rejections.push(route.request().postDataJSON());
-      return route.fulfill({
-        status: 202,
-        json: {
-          work_id: "book",
-          message:
-            "Rejected in download review (wrong language); finding another release",
-        },
-      });
-    } else if (
-      url === "/api/organization/download-roots" ||
-      url === "/api/organization/inspections"
-    )
-      data = [];
-    await route.fulfill({ json: data });
+        ];
+      else if (url === "/api/organization/inspections/download/accept") {
+        accepts.push(route.request().postDataJSON());
+        return route.fulfill({
+          status: 202,
+          json: { id: "download", state: "ready", plan_id: null },
+        });
+      } else if (url === "/api/organization/inspections/download/reject") {
+        rejections.push(route.request().postDataJSON());
+        return route.fulfill({
+          status: 202,
+          json: {
+            work_id: "book",
+            message:
+              "Rejected in download review (wrong language); finding another release",
+          },
+        });
+      } else if (
+        url === "/api/organization/download-roots" ||
+        url === "/api/organization/inspections"
+      )
+        data = [];
+      await route.fulfill({ json: data });
+    });
+    await page.goto("/organization/inspections?inspection=download");
+    const review = page.getByRole("region", { name: "Download next step" });
+    await expect(review.getByRole("status")).toHaveText(reason);
+    const comparison = review.getByRole("table");
+    const language = comparison.getByRole("row", { name: /Language/ });
+    await expect(language).toContainText(
+      "English (your catalog's primary language)",
+    );
+    await expect(language.locator(".is-mismatch")).toHaveText(
+      "Deutsch (differs)",
+    );
+    await expect(comparison.getByRole("row", { name: /Length/ })).toContainText(
+      "15 h 34 min",
+    );
+    await expect(comparison.getByRole("row", { name: /ISBN/ })).toContainText(
+      "ISBN 9783000000000",
+    );
+    // A single file needs no completeness confirmation; the mismatch makes rejecting primary.
+    await expect(
+      review.getByRole("button", { name: "Add to library" }),
+    ).toBeEnabled();
+    const wrong = review.getByRole("button", {
+      name: "Wrong book, find another",
+    });
+    await expect(wrong).toHaveClass(/primary/);
+    if (mode === "accept") {
+      await review.getByRole("button", { name: "Add to library" }).click();
+      await expect.poll(() => accepts).toEqual([{ confirmation: "confirm-1" }]);
+      expect(rejections).toEqual([]);
+      expect(errors).toEqual([]);
+      return;
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await wrong.click();
+    await expect(
+      review.getByLabel("What is wrong with this release?"),
+    ).toHaveValue("wrong-language");
+    await review
+      .getByRole("button", { name: "Reject and find another" })
+      .click();
+    await expect(page.locator(".download-import-state")).toHaveText("Rejected");
+    await expect(page.getByText("Looking for another release")).toBeVisible();
+    expect(rejections).toEqual([{ reason: "wrong-language" }]);
+    expect(errors).toEqual([]);
   });
-  await page.goto("/organization/inspections?inspection=download");
-  const review = page.getByRole("region", { name: "Download next step" });
-  await expect(review.getByRole("status")).toHaveText(reason);
-  const comparison = review.getByRole("table");
-  const language = comparison.getByRole("row", { name: /Language/ });
-  await expect(language).toContainText(
-    "English (your catalog's primary language)",
-  );
-  await expect(language.locator(".is-mismatch")).toHaveText(
-    "Deutsch (differs)",
-  );
-  await expect(comparison.getByRole("row", { name: /Length/ })).toContainText(
-    "15 h 34 min",
-  );
-  await expect(comparison.getByRole("row", { name: /ISBN/ })).toContainText(
-    "ISBN 9783000000000",
-  );
-  // A single file needs no completeness confirmation; the mismatch makes rejecting primary.
-  await expect(
-    review.getByRole("button", { name: "Add to library" }),
-  ).toBeEnabled();
-  const wrong = review.getByRole("button", {
-    name: "Wrong book, find another",
-  });
-  await expect(wrong).toHaveClass(/primary/);
-  await page.setViewportSize({ width: 390, height: 844 });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  await wrong.click();
-  await expect(
-    review.getByLabel("What is wrong with this release?"),
-  ).toHaveValue("wrong-language");
-  await review.getByRole("button", { name: "Reject and find another" }).click();
-  await expect(page.locator(".download-import-state")).toHaveText("Rejected");
-  await expect(page.getByText("Looking for another release")).toBeVisible();
-  expect(rejections).toEqual([{ reason: "wrong-language" }]);
-  expect(errors).toEqual([]);
-});
+}

@@ -12832,7 +12832,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AcceptInput"
+                "$ref": "#/components/schemas/app__api__own_reviews__AcceptInput"
               }
             }
           }
@@ -13631,6 +13631,60 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RejectionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/organization/inspections/{inspection_id}/accept": {
+      "post": {
+        "tags": [
+          "organization"
+        ],
+        "summary": "Accept Download",
+        "description": "Confirm the shown title, author or language differences and import as planned.",
+        "operationId": "accept_download_api_organization_inspections__inspection_id__accept_post",
+        "parameters": [
+          {
+            "name": "inspection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Inspection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__api__imports__AcceptInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InspectionView"
                 }
               }
             }
@@ -18653,21 +18707,6 @@
           "base_url"
         ],
         "title": "ABSConnectionInput"
-      },
-      "AcceptInput": {
-        "properties": {
-          "confirmation": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Confirmation"
-          }
-        },
-        "type": "object",
-        "required": [
-          "confirmation"
-        ],
-        "title": "AcceptInput"
       },
       "AccessCatalog": {
         "properties": {
@@ -25255,6 +25294,17 @@
                 "type": "null"
               }
             ]
+          },
+          "confirmation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation"
           }
         },
         "type": "object",
@@ -44045,6 +44095,22 @@
         ],
         "title": "RevisionInput"
       },
+      "app__api__imports__AcceptInput": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirmation"
+        ],
+        "title": "AcceptInput"
+      },
       "app__api__inspection_groupings__GroupingView": {
         "properties": {
           "revision": {
@@ -44207,6 +44273,21 @@
           "external_id"
         ],
         "title": "MatchInput"
+      },
+      "app__api__own_reviews__AcceptInput": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation"
+        ],
+        "title": "AcceptInput"
       },
       "app__api__releases__FollowInput": {
         "properties": {

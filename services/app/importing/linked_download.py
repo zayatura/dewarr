@@ -268,11 +268,30 @@ async def inspection_match(db, inspection, group):
     if len(await download_memberships.for_attempt(db, attempt.id)) != 1:
         return None
     work = await canonical_work(db, UUID(selection.frozen["origin_work_id"]))
-    return await file_match(db, work, selection, inspection, group)
+    decision = await file_match(db, work, selection, inspection, group)
+    if decision.conflicts and await confirmed_for(db, attempt.id) == confirmable(decision):
+        # A person confirmed exactly these disagreements; they no longer block.
+        from dataclasses import replace
+
+        return replace(decision, conflicts=[])
+    return decision
 
 
-# Disagreements a requester may confirm for their own request. Identifier problems
-# and contradictory tags (conflicts) stay with administrators.
+async def confirmed_for(db, attempt_id):
+    """The disagreements someone confirmed for this download, if any."""
+    from app.db.models import AutomaticImport
+
+    automatic = await db.scalar(
+        select(AutomaticImport).where(AutomaticImport.attempt_id == attempt_id)
+    )
+    return ((automatic.evidence if automatic else {}).get("requester_confirmation") or {}).get(
+        "mismatches"
+    )
+
+
+# Disagreements a person can judge: is this the book that was asked for? Tags are
+# often abbreviated or wrong ("HL" for "Harbor Lights"). Identifier problems stay
+# with administrators; unreadable or multi-book downloads never reach this check.
 CONFIRMABLE = {"title", "authors", "language", "release_title", "release_authors"}
 
 
@@ -280,7 +299,7 @@ def confirmable(decision):
     """The fingerprint a requester confirms for these disagreements, or None."""
     from app.importing.naming import fingerprint
 
-    if decision.agrees or decision.conflicts or not decision.mismatches:
+    if decision.agrees or not decision.mismatches:
         return None
     if any(item["field"] not in CONFIRMABLE for item in decision.mismatches):
         return None
@@ -294,6 +313,14 @@ async def request_hold_reason(db, selection, inspection, group):
     return decision.mismatches[0]["message"] if decision.mismatches else None
 
 
+# A confirmed field and the note an identified edition's evidence records for it.
+EDITION_NOTES = {
+    "title": "Embedded title is missing or differs",
+    "authors": "Embedded authors are missing or differ",
+    "language": "Language differs",
+}
+
+
 async def linked_version(
     db, approver, selection, inspection, group, grouping_revision, *, match, confirmed=None
 ):
@@ -305,8 +332,13 @@ async def linked_version(
     facts = group_evidence(inspection.snapshot, group)
     decision = await file_match(db, work, selection, inspection, group)
     # The requester confirmed exactly these disagreements for their own request.
-    if not decision.agrees and not (confirmed and confirmable(decision) == confirmed):
-        return None
+    accepted = set()
+    if not decision.agrees:
+        if not (confirmed and confirmable(decision) == confirmed):
+            return None
+        # The same disagreements, as an identified edition's evidence notes them.
+        fields = {item["field"] for item in decision.mismatches}
+        accepted = {note for field, note in EDITION_NOTES.items() if field in fields}
     identified = [candidate for candidate in match.candidates if candidate.identifier_match]
     if identified:
         if MULTIPLE_IDENTIFIERS in facts.issues:
@@ -314,7 +346,8 @@ async def linked_version(
             # arbitrarily pick one ISBN's edition. Known identity or recording
             # conflicts still block the saved-book fallback.
             if any(
-                candidate.work_id != work.id or set(candidate.conflicts) - {UNSUPPORTED_IDENTIFIERS}
+                candidate.work_id != work.id
+                or set(candidate.conflicts) - {UNSUPPORTED_IDENTIFIERS} - accepted
                 for candidate in identified
             ):
                 return None
@@ -333,7 +366,7 @@ async def linked_version(
         if (
             len(identified) != 1
             or identified[0].work_id != work.id
-            or set(identified[0].conflicts) - missing
+            or set(identified[0].conflicts) - missing - accepted
         ):
             return None
         return await db.get(Version, identified[0].version_id)

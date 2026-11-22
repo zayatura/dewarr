@@ -181,8 +181,8 @@ async def assess(db, user, attempt, selection, automatic, members):
         if not held
         else "Your account can't add held downloads; an administrator will check it."
         if not has(user, REVIEW_OWN_DOWNLOADS)
-        else "This download needs an administrator: the problem is with the files, "
-        "not only their title, author or language."
+        else "This download needs an administrator: besides any title, author or "
+        "language difference, its files have a problem only they can resolve."
         if not confirmation or len(members) != 1 or not group
         else "An administrator will check it: the library isn't one you can use."
     )

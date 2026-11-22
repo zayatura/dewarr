@@ -44,9 +44,9 @@ The reviewer then chooses one of these:
 The person who made the request can open **Review download** on their held request. It shows the same reason and comparison. They can always reject the release with **Wrong book, find another**. With the **Resolve own download reviews** permission (an add-on in Settings → Users & access), they can also choose **Right book, add to library**, under these conditions:
 
 - The book goes to a library they can use.
-- Only the title, author or language differs. Unreadable files, several books in one download, identifier problems and contradictory tags still need an administrator.
+- Only the title, author or language differs, whether in the release listing or in the files' own tags (for example an abbreviated title). Unreadable files, several books in one download and identifier problems still need an administrator.
 
-The import then runs again under the administrator's automatic-import approval, and the confirmation is recorded in the audit log.
+The import then runs again under the administrator's automatic-import approval, and the confirmation is recorded in the audit log. An administrator's **Add to library** on the review page confirms these differences the same way.
 
 No book or edition picker is shown. Downloads with structural problems (several books, unreadable files, ambiguous identifiers) cannot be added from this page. They can be rejected, or the reviewer can choose a release from the same book's source search. Correcting catalog metadata uses the existing book metadata page and its Hardcover search.
 

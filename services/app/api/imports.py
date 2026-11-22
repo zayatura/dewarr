@@ -79,6 +79,8 @@ class DownloadContext(BaseModel):
     expected_language: str | None = None
     expected_language_source: Literal["request", "book", "settings"] | None = None
     release: "ReleaseListing | None" = None
+    # Accepting these disagreements re-runs the automatic import (see /accept).
+    confirmation: str | None = None
 
 
 class RequestMismatch(BaseModel):
@@ -321,7 +323,7 @@ async def inspection(inspection_id: UUID, admin: Admin, db: Database):
     if row.state == "ready" and row.snapshot and not plan:
         from app.domain.catalog_language import language_name
         from app.importing.grouping import current_grouping
-        from app.importing.linked_download import file_match
+        from app.importing.linked_download import confirmable, file_match
 
         _, grouping = await current_grouping(db, row)
         matches = [await file_match(db, work, selection, row, group) for group in grouping.groups]
@@ -336,6 +338,8 @@ async def inspection(inspection_id: UUID, admin: Admin, db: Database):
             value.download.expected_language_source = (
                 matches[0].language_source if matches[0].language else None
             )
+            if value.download.can_retry:
+                value.download.confirmation = confirmable(matches[0])
     return value
 
 
@@ -425,6 +429,58 @@ async def reject_download(inspection_id: UUID, body: RejectInput, admin: Admin, 
     return RejectionView(
         work_id=UUID(selection.frozen["origin_work_id"]), message=automatic.message
     )
+
+
+class AcceptInput(StrictModel):
+    confirmation: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/inspections/{inspection_id}/accept", response_model=InspectionView, status_code=202)
+async def accept_download(inspection_id: UUID, body: AcceptInput, admin: Admin, db: Database):
+    """Confirm the shown title, author or language differences and import as planned."""
+    from app.db.models import AuditEvent
+    from app.domain.download_attempts import locked
+    from app.domain.work_graph import canonical_work
+    from app.importing.automatic import retry_held
+    from app.importing.grouping import current_grouping
+    from app.importing.linked_download import confirmable, file_match
+
+    if get_settings().recovery_mode:
+        raise HTTPException(409, "Downloads are paused for recovery")
+    row = await owned_inspection(db, admin.id, inspection_id)
+    attempt_id = await db.scalar(
+        select(DownloadAttempt.id).where(DownloadAttempt.inspection_id == row.id)
+    )
+    if not attempt_id:
+        raise HTTPException(409, "This inspection is not linked to a completed download")
+    attempt, selection = await locked(db, attempt_id)
+    automatic = await db.scalar(
+        select(AutomaticImport).where(AutomaticImport.attempt_id == attempt.id).with_for_update()
+    )
+    _, grouping = await current_grouping(db, row)
+    if not automatic or automatic.state != "held" or len(grouping.groups) != 1:
+        raise HTTPException(409, "This download is no longer waiting for review; refresh it")
+    work = await canonical_work(db, UUID(selection.frozen["origin_work_id"]))
+    decision = await file_match(db, work, selection, row, grouping.groups[0])
+    confirmation = confirmable(decision)
+    if not confirmation or confirmation != body.confirmation:
+        raise HTTPException(409, "The download changed since you reviewed it; review it again")
+    automatic.evidence = {
+        **automatic.evidence,
+        "requester_confirmation": {"user_id": str(admin.id), "mismatches": confirmation},
+    }
+    db.add(
+        AuditEvent(
+            actor_id=admin.id,
+            action="acquisition.download.review_confirmed",
+            entity_id=attempt.id,
+            detail={"mismatches": [item["message"] for item in decision.mismatches]},
+        )
+    )
+    if not await retry_held(db, attempt):
+        raise HTTPException(409, "This download is no longer waiting for review; refresh it")
+    await db.commit()
+    return await inspection(inspection_id, admin, db)
 
 
 @router.post("/inspections/{inspection_id}/retry", response_model=InspectionView, status_code=202)

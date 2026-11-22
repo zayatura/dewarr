@@ -4104,6 +4104,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/organization/inspections/{inspection_id}/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept Download
+     * @description Confirm the shown title, author or language differences and import as planned.
+     */
+    post: operations["accept_download_api_organization_inspections__inspection_id__accept_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/organization/inspections/{inspection_id}/retry": {
     parameters: {
       query?: never;
@@ -5738,11 +5758,6 @@ export interface components {
        * @default true
        */
       enabled: boolean;
-    };
-    /** AcceptInput */
-    AcceptInput: {
-      /** Confirmation */
-      confirmation: string;
     };
     /** AccessCatalog */
     AccessCatalog: {
@@ -8276,6 +8291,8 @@ export interface components {
       /** Expected Language Source */
       expected_language_source?: ("request" | "book" | "settings") | null;
       release?: components["schemas"]["ReleaseListing"] | null;
+      /** Confirmation */
+      confirmation?: string | null;
     };
     /** DownloadFolderView */
     DownloadFolderView: {
@@ -15330,6 +15347,11 @@ export interface components {
       /** Expected Revision */
       expected_revision: string;
     };
+    /** AcceptInput */
+    app__api__imports__AcceptInput: {
+      /** Confirmation */
+      confirmation: string;
+    };
     /** GroupingView */
     app__api__inspection_groupings__GroupingView: {
       /** Revision */
@@ -15384,6 +15406,11 @@ export interface components {
        * @default false
        */
       confirm_match: boolean;
+    };
+    /** AcceptInput */
+    app__api__own_reviews__AcceptInput: {
+      /** Confirmation */
+      confirmation: string;
     };
     /** FollowInput */
     app__api__releases__FollowInput: {
@@ -23361,7 +23388,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["AcceptInput"];
+        "application/json": components["schemas"]["app__api__own_reviews__AcceptInput"];
       };
     };
     responses: {
@@ -23929,6 +23956,41 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RejectionView"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  accept_download_api_organization_inspections__inspection_id__accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        inspection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["app__api__imports__AcceptInput"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InspectionView"];
         };
       };
       /** @description Validation Error */

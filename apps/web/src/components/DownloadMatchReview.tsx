@@ -83,8 +83,11 @@ export default function DownloadMatchReview({
   const candidate =
     candidates.find((item) => item.version_id === match?.selected_version_id) ||
     (identified.length === 1 ? identified[0] : undefined);
+  // Title, author or language tags that disagree are shown in the comparison and,
+  // when the import can be accepted, are the reviewer's call. Problems with the
+  // files' own evidence always block.
   const issues = [
-    ...(download.file_conflicts || []),
+    ...(download.confirmation ? [] : download.file_conflicts || []),
     ...(match?.evidence.issues || []),
   ];
   const conflicts =
@@ -128,7 +131,7 @@ export default function DownloadMatchReview({
         ? "These files may contain several books. Choose a download containing only the requested book."
         : identified.length > 1
           ? "The files point to more than one catalog edition. We need a clearer release to avoid importing the wrong edition."
-          : download.file_conflicts?.length
+          : download.file_conflicts?.length && !download.confirmation
             ? download.file_conflicts[0]
             : issues.length
               ? "Some files could not be verified or contain conflicting information."
@@ -163,6 +166,20 @@ export default function DownloadMatchReview({
   const confirmed = !several || complete;
   const confirm = useMutation({
     mutationFn: async () => {
+      if (download.confirmation && !prepared.current) {
+        // Accept the shown title, author or language differences; the automatic
+        // import then continues with the same checks as any other download.
+        if (!confirmed) throw new Error("Refresh the review before importing.");
+        return result(
+          await api.POST(
+            "/api/organization/inspections/{inspection_id}/accept",
+            {
+              params: { path: { inspection_id: inspection.id } },
+              body: { confirmation: download.confirmation },
+            },
+          ),
+        );
+      }
       if (!prepared.current) {
         if (!data || !group || !destination || blocked || !confirmed)
           throw new Error("Refresh the review before importing.");
