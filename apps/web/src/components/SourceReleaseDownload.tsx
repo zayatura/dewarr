@@ -1,10 +1,24 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, CircleCheck, Download, LoaderCircle } from "lucide-react";
+import {
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
+  Download,
+  LoaderCircle,
+} from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, result, type Auth } from "../api/client";
 import type { components } from "../api/schema";
 import { randomUUID } from "../randomUUID";
+import { useReleaseLibraries } from "./useReleaseLibraries";
 
 const CollectionReview = lazy(() => import("./CollectionReview"));
 
@@ -33,7 +47,8 @@ export default function SourceReleaseDownload({
   row = false,
   possibleCollection = false,
   reviewContext,
-  libraryId,
+  medium,
+  libraryChoice = false,
 }: {
   searchId: string;
   resultId: string;
@@ -46,12 +61,33 @@ export default function SourceReleaseDownload({
   row?: boolean;
   possibleCollection?: boolean;
   reviewContext?: string;
-  /** Library for the new request; omitted, the default library applies. */
-  libraryId?: string;
+  medium?: string | null;
+  /**
+   * The download starts a new request, which may name a library. A request's
+   * own search keeps that request's library.
+   */
+  libraryChoice?: boolean;
 }) {
   const [reviewCollection, setReviewCollection] = useState(false);
   const key = useRef(randomUUID());
-  const keyLibrary = useRef(libraryId);
+  const keyLibrary = useRef<string | undefined>(undefined);
+  const menu = useRef<HTMLDetailsElement>(null);
+  // Fixed placement escapes the scrolling release table; it opens upward near
+  // the bottom of the window and closes when the page moves under it.
+  const [menuAt, setMenuAt] = useState<CSSProperties>();
+  useEffect(() => {
+    if (!menuAt) return;
+    const close = () => {
+      if (menu.current) menu.current.open = false;
+    };
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [menuAt]);
+  const libraries = useReleaseLibraries(medium, libraryChoice);
   const cache = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -88,7 +124,13 @@ export default function SourceReleaseDownload({
     },
   });
   const start = useMutation({
-    mutationFn: async (spendWedge: boolean) =>
+    mutationFn: async ({
+      spendWedge,
+      library,
+    }: {
+      spendWedge: boolean;
+      library?: string;
+    }) =>
       result(
         await api.POST(
           "/api/source-searches/{search_id}/results/{result_id}/download",
@@ -98,7 +140,7 @@ export default function SourceReleaseDownload({
               header: { "idempotency-key": key.current },
               query: {
                 ...(spendWedge ? { use_wedge: true } : {}),
-                ...(libraryId ? { library_id: libraryId } : {}),
+                ...(library ? { library_id: library } : {}),
               },
             },
           },
@@ -221,63 +263,175 @@ export default function SourceReleaseDownload({
       </span>
     </>
   ) : null;
+  // Without a library, the default library applies (as the API resolves it).
+  const begin = (library?: string) => {
+    if ((receipt && !busy) || keyLibrary.current !== library) {
+      key.current = randomUUID();
+      keyLibrary.current = library;
+      setOperationId(undefined);
+    }
+    start.mutate({ spendWedge: offerWedge && useWedge, library });
+  };
+  // Several libraries: the arrow sends this download elsewhere, and Download
+  // asks for a library when there is no default.
+  const offersLibraries =
+    libraryChoice &&
+    libraries.several &&
+    !possibleCollection &&
+    !canReview &&
+    !disabled &&
+    !busy &&
+    !complete;
+  const chooseLibrary = () => {
+    if (!menu.current) return;
+    menu.current.open = true;
+    requestAnimationFrame(() =>
+      menu.current?.querySelector<HTMLButtonElement>("[data-library]")?.focus(),
+    );
+  };
+  const showButton =
+    (showLabel && !row) ||
+    !state ||
+    (!complete && !busy && !["downloading", "queued"].includes(state));
+  const button = (
+    <button
+      className={showLabel ? "primary" : "release-info-button"}
+      aria-label={`${canReview ? "Review release" : "Download"} ${title}`}
+      title={
+        state && (complete || busy)
+          ? labels[state]
+          : disabledReason ||
+            (canReview
+              ? "Review the manifest and select this release"
+              : offersLibraries
+                ? libraries.preferred
+                  ? `Download to ${libraries.preferred.name}`
+                  : "Choose a library to download into"
+                : "Download this release")
+      }
+      disabled={disabled || !!busy || complete}
+      onClick={() => {
+        if (possibleCollection) {
+          setReviewCollection(true);
+          return;
+        }
+        if (canReview) {
+          inspect.mutate();
+          return;
+        }
+        if (offersLibraries && !libraries.preferred) {
+          chooseLibrary();
+          return;
+        }
+        begin();
+      }}
+    >
+      {busy ? (
+        <LoaderCircle
+          size={18}
+          className="source-download-spinner"
+          aria-hidden
+        />
+      ) : complete ? (
+        <CircleCheck size={18} aria-hidden />
+      ) : (
+        <Download size={18} aria-hidden />
+      )}
+      {(showLabel || canReview) &&
+        (busy
+          ? canReview
+            ? "Opening review…"
+            : "Starting…"
+          : canReview
+            ? "Review release"
+            : complete && state
+              ? labels[state]
+              : "Download")}
+    </button>
+  );
   return (
     <>
-      {((showLabel && !row) ||
-        !state ||
-        (!complete && !busy && !["downloading", "queued"].includes(state))) && (
-        <button
-          className={showLabel ? "primary" : "release-info-button"}
-          aria-label={`${canReview ? "Review release" : "Download"} ${title}`}
-          title={
-            state && (complete || busy)
-              ? labels[state]
-              : disabledReason ||
-                (canReview
-                  ? "Review the manifest and select this release"
-                  : "Download this release")
-          }
-          disabled={disabled || !!busy || complete}
-          onClick={() => {
-            if (possibleCollection) {
-              setReviewCollection(true);
-              return;
-            }
-            if (canReview) {
-              inspect.mutate();
-              return;
-            }
-            if ((receipt && !busy) || keyLibrary.current !== libraryId) {
-              key.current = randomUUID();
-              keyLibrary.current = libraryId;
-              setOperationId(undefined);
-            }
-            start.mutate(offerWedge && useWedge);
-          }}
-        >
-          {busy ? (
-            <LoaderCircle
-              size={18}
-              className="source-download-spinner"
-              aria-hidden
-            />
-          ) : complete ? (
-            <CircleCheck size={18} aria-hidden />
-          ) : (
-            <Download size={18} aria-hidden />
-          )}
-          {(showLabel || canReview) &&
-            (busy
-              ? canReview
-                ? "Opening review…"
-                : "Starting…"
-              : canReview
-                ? "Review release"
-                : complete && state
-                  ? labels[state]
-                  : "Download")}
-        </button>
-      )}
+      {showButton &&
+        (offersLibraries ? (
+          <div className="release-download-split">
+            {button}
+            <details
+              ref={menu}
+              className="release-download-menu"
+              onToggle={(event) => {
+                const summary = event.currentTarget.querySelector("summary");
+                if (!event.currentTarget.open || !summary) {
+                  setMenuAt(undefined);
+                  return;
+                }
+                const box = summary.getBoundingClientRect();
+                const split =
+                  event.currentTarget.parentElement?.getBoundingClientRect() ??
+                  box;
+                const below = window.innerHeight - box.bottom;
+                const height = 56 + 36 * libraries.libraries.length;
+                // Align with the button's left edge when the menu fits there,
+                // otherwise with its right edge; never past the window.
+                const width = 200;
+                setMenuAt({
+                  ...(split.left + width <= window.innerWidth - 8
+                    ? { left: Math.max(8, split.left) }
+                    : { right: Math.max(8, window.innerWidth - box.right) }),
+                  ...(below < height && box.top > below
+                    ? { bottom: window.innerHeight - box.top + 6 }
+                    : { top: box.bottom + 6 }),
+                });
+              }}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget))
+                  event.currentTarget.open = false;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && event.currentTarget.open) {
+                  // Close only the menu, not the Release details dialog.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  event.currentTarget.open = false;
+                  event.currentTarget.querySelector("summary")?.focus();
+                }
+              }}
+            >
+              <summary
+                aria-label={`Choose library for ${title}`}
+                title="Download to another library"
+              >
+                <ChevronDown size={16} aria-hidden />
+              </summary>
+              <div
+                className="release-download-options"
+                style={menuAt}
+                role="group"
+                aria-label="Download to"
+              >
+                <span aria-hidden>Download to</span>
+                {libraries.libraries.map((library) => (
+                  <button
+                    key={library.id}
+                    type="button"
+                    data-library={library.id}
+                    aria-label={`Download to ${library.name}`}
+                    onClick={() => {
+                      if (menu.current) menu.current.open = false;
+                      begin(library.id);
+                    }}
+                  >
+                    {library.name}
+                    {library.id === libraries.preferred?.id && (
+                      <small>Default</small>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </details>
+          </div>
+        ) : (
+          button
+        ))}
       {reviewCollection && (
         <Suspense fallback={<p role="status">Loading collection review…</p>}>
           <CollectionReview

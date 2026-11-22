@@ -241,6 +241,93 @@ input:disabled {
   text-align: left;
   font-size: 12px;
 }
+/* Download with an arrow that sends one download to another library. */
+.release-download-split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+.release-download-split > button.primary {
+  border-right-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.release-download-menu {
+  display: flex;
+}
+.release-download-menu > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-left-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 0 var(--control-radius) var(--control-radius) 0;
+  color: var(--accent);
+  background: var(--control-active);
+  cursor: pointer;
+  list-style: none;
+}
+.release-download-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.release-download-menu > summary:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.release-download-menu > summary svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 120ms;
+}
+.release-download-menu[open] > summary svg {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .release-download-menu > summary svg {
+    transition: none;
+  }
+}
+.release-download-options {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  min-width: 180px;
+  max-width: calc(100vw - 40px);
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel, #1c2738);
+  box-shadow: 0 12px 30px #0004;
+}
+.release-download-options > span {
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.release-download-options > button {
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.release-download-options > button:hover {
+  background: var(--surface);
+}
+.release-download-options small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
 .list-refresh {
   height: var(--control-height);
   border: 1px solid var(--line);

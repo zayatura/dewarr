@@ -4,11 +4,6 @@ import { Info, Search as SearchIcon } from "lucide-react";
 import SourceReleaseDetails, {
   ReleaseTags,
 } from "../components/SourceReleaseDetails";
-import ReleaseLibraryChoice, {
-  libraryMissing,
-  useReleaseLibraries,
-  type LibraryChoices,
-} from "../components/ReleaseLibraryChoice";
 import { transferSize } from "./DownloadConstraints";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -334,32 +329,6 @@ function Results({
         typeof value === "function" ? value(pageIndex) : value,
       ),
     });
-  // A request's own search keeps that request's library; other downloads start
-  // a new request, which may name a library.
-  const [libraries, setLibraries] = useState<LibraryChoices>({});
-  const libraryChoices = {
-    ebook: useReleaseLibraries("ebook"),
-    audio: useReleaseLibraries("audio"),
-  };
-  const libraryFor = (medium?: string | null) =>
-    !data.request_id && (medium === "ebook" || medium === "audio")
-      ? libraries[medium]
-      : undefined;
-  const missingLibrary = (medium?: string | null) =>
-    !data.request_id &&
-    (medium === "ebook" || medium === "audio") &&
-    libraryMissing(libraryChoices[medium], libraries[medium]);
-  const changeLibrary = (medium?: string | null) =>
-    !data.request_id && (medium === "ebook" || medium === "audio")
-      ? (value?: string) =>
-          setLibraries((previous) => ({ ...previous, [medium]: value }))
-      : undefined;
-  const libraryMedia = (["ebook", "audio"] as const).filter(
-    (medium) =>
-      !data.request_id &&
-      canAcquire &&
-      data.items.some((item) => item.release.medium === medium),
-  );
   const detailId = view.get("release");
   const setDetailId = (value: string | null) => updateView({ release: value });
   const detailIndex = data.items.findIndex((item) => item.id === detailId);
@@ -541,18 +510,6 @@ function Results({
           className="panel release-comparison"
           aria-label="Compare loaded releases"
         >
-          {libraryMedia.some((medium) => libraryChoices[medium].several) && (
-            <div className="release-library-choices">
-              {libraryMedia.map((medium) => (
-                <ReleaseLibraryChoice
-                  key={medium}
-                  medium={medium}
-                  value={libraries[medium]}
-                  onChange={changeLibrary(medium)!}
-                />
-              ))}
-            </div>
-          )}
           <div className="library-filters">
             <label className="grow">
               <span className="sr-only">Filter title, author or narrator</span>
@@ -777,7 +734,9 @@ function Results({
                           resultId={item.id}
                           title={item.release.title}
                           download={item.download}
-                          libraryId={libraryFor(item.release.medium)}
+                          medium={item.release.medium}
+                          // A request's own search keeps that request's library.
+                          libraryChoice={!data.request_id}
                           offerWedge={
                             item.release.source === "mam" &&
                             !item.release.freeleech &&
@@ -786,15 +745,12 @@ function Results({
                           disabled={
                             data.status !== "completed" ||
                             !!unavailableReason(item) ||
-                            item.assessment.blocked.length > 0 ||
-                            missingLibrary(item.release.medium)
+                            item.assessment.blocked.length > 0
                           }
                           disabledReason={
                             unavailableReason(item)
                               ? `${unavailableReason(item)}. Refresh results to download.`
-                              : missingLibrary(item.release.medium)
-                                ? "Choose a library above to download."
-                                : undefined
+                              : undefined
                           }
                         />
                       )}
@@ -814,17 +770,10 @@ function Results({
           searchId={data.id}
           close={() => setDetailId(null)}
           canAcquire={canAcquire && canDownload(detailItem.release.medium)}
-          libraryId={libraryFor(detailItem.release.medium)}
-          onLibraryChange={changeLibrary(detailItem.release.medium)}
+          libraryChoice={!data.request_id}
           disabled={
             !!unavailableReason(detailItem) ||
-            detailItem.assessment.blocked.length > 0 ||
-            missingLibrary(detailItem.release.medium)
-          }
-          disabledReason={
-            missingLibrary(detailItem.release.medium)
-              ? "Choose a library to download."
-              : undefined
+            detailItem.assessment.blocked.length > 0
           }
         />
       )}

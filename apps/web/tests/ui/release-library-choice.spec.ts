@@ -1,6 +1,6 @@
 import { expect, test } from "../fixtures";
 
-test("a release download asks for the library when several have folders", async ({
+test("Download offers each library and asks when there is no default", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -17,7 +17,7 @@ test("a release download asks for the library when several have folders", async 
   const search = {
     id: "search-1",
     work_id: work.id,
-    request_id: null,
+    request_id: null as string | null,
     query: work.title,
     medium: "all",
     offset: 0,
@@ -58,6 +58,7 @@ test("a release download asks for the library when several have folders", async 
     ],
   };
   const downloads: string[] = [];
+  let effective: Record<string, string> = {};
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -76,7 +77,7 @@ test("a release download asks for the library when several have folders", async 
     else if (path === "/api/catalog/works/work-1") data = work;
     else if (path === "/api/acquisition/profiles") data = [profile];
     else if (path === "/api/acquisition/preferences/personal")
-      data = { effective: {}, inherited: {}, overrides: {}, revision: "one" };
+      data = { effective, inherited: {}, overrides: {}, revision: "one" };
     else if (path === "/api/acquisition/selections/options")
       data = {
         downloaders: [],
@@ -122,25 +123,49 @@ test("a release download asks for the library when several have folders", async 
     await route.fulfill({ json: data });
   });
   await page.goto("/books/work-1?tab=sources");
-  const results = page.getByRole("region", {
-    name: "Compare loaded releases",
+  const table = page.locator(".source-table");
+  const libraries = page.getByRole("group", { name: "Download to" });
+  // Without a default library, Download asks where the book should go.
+  const rowDownload = table.getByRole("button", {
+    name: "Download Harbor Lights",
   });
-  const library = results.getByRole("combobox", { name: "Audiobook library" });
-  await expect(library).toBeVisible();
-  // Without a default library the API cannot pick one, so neither can Download.
-  await expect(
-    page.getByRole("button", { name: "Download Harbor Lights" }).first(),
-  ).toBeDisabled();
+  await expect(rowDownload).toHaveAttribute(
+    "title",
+    "Choose a library to download into",
+  );
+  await rowDownload.click();
+  await expect(libraries).toBeVisible();
+  await expect(libraries.getByText("Default")).toHaveCount(0);
+  await libraries
+    .getByRole("button", { name: "Download to Library B" })
+    .click();
+  await expect.poll(() => downloads).toEqual(["library-b"]);
+  // With a default, Download uses it; the arrow still offers the others.
+  effective = { audio_library_id: "library-a" };
+  await page.reload();
   await page.getByRole("button", { name: "Details for Harbor Lights" }).click();
   const dialog = page.getByRole("dialog", { name: "Release details" });
-  const choice = dialog.getByRole("combobox", { name: "Audiobook library" });
-  await expect(choice).toBeVisible();
   const download = dialog.getByRole("button", {
     name: "Download Harbor Lights",
   });
-  await expect(download).toBeDisabled();
-  await choice.selectOption("library-b");
+  await expect(download).toHaveAttribute("title", "Download to Library A");
+  await dialog.getByLabel("Choose library for Harbor Lights").click();
+  const choices = dialog.getByRole("group", { name: "Download to" });
+  await expect(
+    choices.getByRole("button", { name: "Download to Library A" }),
+  ).toContainText("Default");
+  await page.keyboard.press("Escape");
+  await expect(choices).toBeHidden();
   await download.click();
-  await expect.poll(() => downloads).toEqual(["library-b"]);
+  await expect.poll(() => downloads).toEqual(["library-b", ""]);
+  // A request's own search keeps that request's library.
+  search.request_id = "request-1";
+  await page.goto("/books/work-1?tab=sources");
+  await expect(
+    table.getByRole("button", { name: "Download Harbor Lights" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Choose library for Harbor Lights")).toHaveCount(
+    0,
+  );
   expect(errors).toEqual([]);
 });
