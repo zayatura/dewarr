@@ -18,6 +18,16 @@ export const scopeLabels = {
   ebook_library_id: "Ebook library",
   audio_library_id: "Audiobook library",
 } as const;
+const inheritedSources: Record<string, string> = {
+  "Installation default": "the default set for everyone on this server",
+  "Personal default": "your personal default",
+};
+/** Explains an overridden value and what Reset falls back to. */
+export function originHelp(origin?: string) {
+  const source =
+    (origin && inheritedSources[origin]) || "Dewarr's built-in default";
+  return `Custom value saved here. Reset uses ${source} instead.`;
+}
 const media = {
   ebook: "Ebook",
   audio: "Audiobook",
@@ -65,10 +75,8 @@ export default function ScopeFields({
   const origin = (field: keyof typeof scopeLabels) =>
     Object.hasOwn(overrides, field) ? (
       <div className="preference-origin">
-        <SettingHelp label="inherited value">
-          {Object.hasOwn(overrides, field)
-            ? "Custom value"
-            : `Inherited · ${origins[field] || "default"}`}
+        <SettingHelp label={`${scopeLabels[field]} value`}>
+          {originHelp(origins[field])}
         </SettingHelp>
         {Object.hasOwn(overrides, field) && (
           <button
@@ -215,9 +223,21 @@ export default function ScopeFields({
           {origin("standalone")}
         </>
       )}
+      {showLibraries && defaults && !librariesOnly && (
+        <div className="setting-subheading">
+          <h3>Default libraries</h3>
+          <SettingHelp label="default libraries">
+            The library a download goes to when its request does not name one.
+            Without a default, a download asks for the library whenever several
+            libraries have folders. Members set their own defaults under
+            Settings → Libraries; a default for everyone applies only to members
+            who can access that library.
+          </SettingHelp>
+        </div>
+      )}
       {showLibraries &&
         (["ebook_library_id", "audio_library_id"] as const).map((field) => (
-          <div key={field}>
+          <div key={field} className="scope-library-field">
             <label>
               {scopeLabels[field]}
               <select

@@ -1867,6 +1867,21 @@ button.help-button:hover {
   grid-column: 1 / -1;
   margin-top: -10px;
 }
+/* A library field keeps its own origin row so both libraries stay side by side. */
+.download-defaults .scope-fields > .scope-library-field {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+.download-defaults .scope-library-field > label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.download-defaults .scope-library-field > .preference-origin {
+  margin: 0;
+}
 .settings-section-body .download-defaults > form {
   gap: 20px;
 }

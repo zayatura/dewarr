@@ -166,6 +166,9 @@ test("no folder is marked default when the API would ask for a library", async (
   await expect(page.getByText("Default", { exact: true })).toHaveCount(0);
   // Administrators choose default libraries with their download defaults.
   await page.goto("/settings#preferences");
+  await expect(
+    page.getByRole("heading", { name: "Default libraries" }),
+  ).toBeVisible();
   const audio = page.getByRole("combobox", { name: "Audiobook library" });
   await expect(audio).toBeVisible();
   await expect(audio.locator("option")).toContainText([

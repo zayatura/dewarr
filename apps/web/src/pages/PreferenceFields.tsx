@@ -1,7 +1,7 @@
 import SettingHelp from "../components/SettingHelp";
 import Order from "./PreferenceOrder";
 import SourcePriorities from "./SourcePriorities";
-import ScopeFields from "./ScopeFields";
+import ScopeFields, { originHelp } from "./ScopeFields";
 import RouteFields, { EffectiveRoutes } from "./RouteFields";
 import NarratorNamesField from "./NarratorNamesField";
 import type { components } from "../api/schema";
@@ -82,10 +82,8 @@ export default function PreferenceFields({
   const origin = (key: keyof Preferences) =>
     Object.hasOwn(overrides, key) ? (
       <div className="preference-origin">
-        <SettingHelp label="inherited value">
-          {Object.hasOwn(overrides, key)
-            ? "Custom value"
-            : `Inherited · ${origins[key] || "default"}`}
+        <SettingHelp label={`${preferenceLabels[key] || key} value`}>
+          {originHelp(origins[key])}
         </SettingHelp>
         {Object.hasOwn(overrides, key) && (
           <button
