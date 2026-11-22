@@ -25243,6 +25243,7 @@ export interface operations {
     parameters: {
       query?: {
         use_wedge?: boolean;
+        library_id?: string | null;
       };
       header: {
         "idempotency-key": string;

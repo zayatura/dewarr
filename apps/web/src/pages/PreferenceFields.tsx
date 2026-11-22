@@ -63,6 +63,7 @@ export default function PreferenceFields({
   onChange,
   includeMedia = true,
   defaults = false,
+  libraries = false,
 }: {
   overrides: Overrides;
   inherited: Preferences;
@@ -70,6 +71,7 @@ export default function PreferenceFields({
   onChange: (value: Overrides) => void;
   includeMedia?: boolean;
   defaults?: boolean;
+  libraries?: boolean;
 }) {
   const effective = { ...inherited, ...overrides };
   if (
@@ -126,6 +128,7 @@ export default function PreferenceFields({
         onChange={onChange}
         includeMedia={includeMedia}
         defaults={defaults}
+        libraries={libraries}
       />
       <div className="preference-ranking-grid">
         <section className="priority-block">

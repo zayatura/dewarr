@@ -33,6 +33,7 @@ export default function SourceReleaseDownload({
   row = false,
   possibleCollection = false,
   reviewContext,
+  libraryId,
 }: {
   searchId: string;
   resultId: string;
@@ -45,9 +46,12 @@ export default function SourceReleaseDownload({
   row?: boolean;
   possibleCollection?: boolean;
   reviewContext?: string;
+  /** Library for the new request; omitted, the default library applies. */
+  libraryId?: string;
 }) {
   const [reviewCollection, setReviewCollection] = useState(false);
   const key = useRef(randomUUID());
+  const keyLibrary = useRef(libraryId);
   const cache = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -92,7 +96,10 @@ export default function SourceReleaseDownload({
             params: {
               path: { search_id: searchId, result_id: resultId },
               header: { "idempotency-key": key.current },
-              query: spendWedge ? { use_wedge: true } : {},
+              query: {
+                ...(spendWedge ? { use_wedge: true } : {}),
+                ...(libraryId ? { library_id: libraryId } : {}),
+              },
             },
           },
         ),
@@ -240,8 +247,9 @@ export default function SourceReleaseDownload({
               inspect.mutate();
               return;
             }
-            if (receipt && !busy) {
+            if ((receipt && !busy) || keyLibrary.current !== libraryId) {
               key.current = randomUUID();
+              keyLibrary.current = libraryId;
               setOperationId(undefined);
             }
             start.mutate(offerWedge && useWedge);

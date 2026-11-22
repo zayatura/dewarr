@@ -455,7 +455,8 @@ async def test_each_library_keeps_its_own_audio_folder(
         assert chosen.id == UUID(second["id"])
         with pytest.raises(HTTPException) as unclear:
             await destination_default(db, user, "audio", None, None)
-        assert "Choose the audiobook library for this request" in unclear.value.detail
+        assert "Choose the audiobook library for this download" in unclear.value.detail
+        assert "Settings → Download preferences" in unclear.value.detail
     # A member who can only use library B inherits neither library A nor its folder.
     async with database() as db, db.begin():
         member = User(username="member", display_name="Member", role="member")

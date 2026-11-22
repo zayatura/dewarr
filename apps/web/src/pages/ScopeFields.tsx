@@ -38,6 +38,7 @@ export default function ScopeFields({
   includeMedia = true,
   librariesOnly = false,
   defaults = false,
+  libraries: libraryDefaults = false,
 }: {
   overrides: Overrides;
   inherited: Preferences;
@@ -46,10 +47,12 @@ export default function ScopeFields({
   includeMedia?: boolean;
   librariesOnly?: boolean;
   defaults?: boolean;
+  /** Show default libraries alongside other defaults (administrators). */
+  libraries?: boolean;
 }) {
   const libraries = useLibraries();
   const values = { ...inherited, ...overrides };
-  const showLibraries = !defaults || librariesOnly;
+  const showLibraries = !defaults || librariesOnly || libraryDefaults;
   const availableLibraries = libraries.data?.filter(
     (library) => library.accessible,
   );

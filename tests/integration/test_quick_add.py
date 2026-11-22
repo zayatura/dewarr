@@ -10,7 +10,9 @@ from app.db.models import (
     AcquisitionReason,
     AssetContains,
     DownloadAttempt,
+    ImportDestination,
     Integration,
+    Library,
     LibraryAsset,
     Operation,
     SourceResult,
@@ -668,6 +670,57 @@ async def test_known_book_download_does_not_require_provider_match(
     assert authorized["resolver"].calls == (
         [] if choice == "mismatched" else [authorized["result"]]
     )
+
+
+async def test_clicked_release_downloads_into_the_chosen_library(
+    client, database, authorized, catalog
+):
+    profiles = (await client.get("/api/acquisition/profiles")).json()
+    async with database() as db, db.begin():
+        search = await db.get(Operation, authorized["search"])
+        search.payload = {**search.payload, "profile": profiles[0]}
+        first = await db.get(Library, catalog["library"])
+        other = Library(
+            integration_id=first.integration_id,
+            external_id="library-b",
+            name="Library B",
+            accessible=True,
+            last_complete_sync=first.last_complete_sync,
+        )
+        db.add(other)
+        await db.flush()
+        db.add(
+            ImportDestination(
+                root_key="audio-b", library_id=other.id, medium="audio", backend_path="/b"
+            )
+        )
+        other_id = str(other.id)
+    path = f"/api/source-searches/{authorized['search']}/results/{authorized['result']}/download"
+    unclear = await client.post(path, headers={"Idempotency-Key": "release-without-library"})
+    assert unclear.status_code == 422, unclear.text
+    assert "Choose the audiobook library for this download" in unclear.json()["detail"]
+    assert "Settings → Download preferences" in unclear.json()["detail"]
+    chosen = await client.post(
+        path,
+        params={"library_id": str(catalog["library"])},
+        headers={"Idempotency-Key": "release-into-library-a"},
+    )
+    assert chosen.status_code == 202, chosen.text
+    identifier = UUID(chosen.json()["id"])
+    await automatic_selection.run(identifier)
+    async with database() as db:
+        operation = await db.get(Operation, identifier)
+        assert operation.status == "completed", operation.message
+        command = operation.payload["command"]
+        assert command["destination_id"] == authorized["body"]["destination_id"]
+        intent = await db.get(AcquisitionIntent, UUID(command["intent_id"]))
+        assert intent.specification["audio_library_id"] == str(catalog["library"])
+    reused = await client.post(
+        path,
+        params={"library_id": other_id},
+        headers={"Idempotency-Key": "release-into-library-a"},
+    )
+    assert reused.status_code == 409, reused.text
 
 
 async def test_clicked_release_rejects_result_from_another_search(client, database, authorized):

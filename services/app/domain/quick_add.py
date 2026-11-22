@@ -471,7 +471,9 @@ async def repair(db, operation):
         operation.message = "Quick add stopped. Check Downloads before retrying."
 
 
-async def selected_release(db, user, search_id, result_id, key, *, use_wedge=False):
+async def selected_release(
+    db, user, search_id, result_id, key, *, use_wedge=False, library_id=None
+):
     """Download only the clicked result using the reader's configured route."""
     from app.adapters.source_releases import release_value
     from app.db.models import SourceResult
@@ -488,6 +490,7 @@ async def selected_release(db, user, search_id, result_id, key, *, use_wedge=Fal
             or command.get("search_id") != str(search_id)
             or command.get("result_id") != str(result_id)
             or bool(command.get("use_wedge")) != bool(use_wedge)
+            or (library_id and not await _uses_library(db, command, library_id))
         ):
             raise HTTPException(409, "This download key was already used for another release")
         return previous
@@ -500,20 +503,30 @@ async def selected_release(db, user, search_id, result_id, key, *, use_wedge=Fal
     release = release_value(row.source_key, row.release_snapshot)
     if release.medium not in {"ebook", "audio"}:
         raise HTTPException(409, "The release medium is unknown; inspect this release first")
-    granted = acquisition.RequestOptions(mode=release.medium)
+    # A chosen library narrows the new request; the default library applies otherwise.
+    granted = acquisition.RequestOptions(
+        mode=release.medium,
+        **({f"{release.medium}_library_id": library_id} if library_id else {}),
+    )
     if not auto_approves(user, granted):
         raise HTTPException(403, "This account can request books, but a download needs approval")
     grant = download_authorization.set(granted)
     try:
         return await _selected_release(
-            db, user, search, search_id, result_id, key, release, use_wedge=use_wedge
+            db, user, search, search_id, result_id, key, release, granted, use_wedge=use_wedge
         )
     finally:
         download_authorization.reset(grant)
 
 
+async def _uses_library(db, command, library_id):
+    intent = await db.get(AcquisitionIntent, UUID(command["intent_id"]))
+    spec = intent.specification if intent else {}
+    return str(library_id) in {spec.get("ebook_library_id"), spec.get("audio_library_id")}
+
+
 async def _selected_release(
-    db, user, search, search_id, result_id, key, release, *, use_wedge=False
+    db, user, search, search_id, result_id, key, release, options, *, use_wedge=False
 ):
     automatic_routes.permitted(user)
     bound = search.payload.get("command", {}).get("request_id")
@@ -526,11 +539,18 @@ async def _selected_release(
             db,
             user,
             UUID(search.payload["work"]["id"]),
-            acquisition.RequestOptions(mode=release.medium),
+            options,
             acquisition.RequestReason(),
             f"release-request:{key}",
         )
     spec = acquisition.RequestSpec.model_validate(intent.specification)
+    chosen = getattr(options, f"{release.medium}_library_id")
+    if chosen and getattr(spec, f"{release.medium}_library_id") != chosen:
+        raise HTTPException(
+            409,
+            "This search belongs to a request for another library. Change the library on "
+            "that request, or search again from the book page.",
+        )
     slot = "either" if spec.mode == "either" else release.medium
     if spec.mode not in {"both", "either", release.medium}:
         raise HTTPException(409, "This release does not match the request's medium")

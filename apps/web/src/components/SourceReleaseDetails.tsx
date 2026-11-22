@@ -7,6 +7,7 @@ import type { components } from "../api/schema";
 import SourceReleaseDownload from "./SourceReleaseDownload";
 import { transferSize } from "../pages/DownloadConstraints";
 import BookDialog from "./BookDialog";
+import ReleaseLibraryChoice from "./ReleaseLibraryChoice";
 
 type Item = components["schemas"]["BookSearchView"]["items"][number];
 export function ReleaseTags({ release }: { release: Item["release"] }) {
@@ -30,6 +31,9 @@ export default function SourceReleaseDetails({
   disabled,
   canAcquire,
   reviewContext,
+  libraryId,
+  onLibraryChange,
+  disabledReason,
 }: {
   item: Item;
   searchId: string;
@@ -38,6 +42,10 @@ export default function SourceReleaseDetails({
   disabled: boolean;
   canAcquire: boolean;
   reviewContext?: string;
+  libraryId?: string;
+  /** Offered when the download starts a new request, not for a request's own search. */
+  onLibraryChange?: (value?: string) => void;
+  disabledReason?: string;
 }) {
   const [tab, setTab] = useState("Description");
   const tabsId = useId();
@@ -105,8 +113,17 @@ export default function SourceReleaseDetails({
           <p className="notice error">{item.assessment.blocked.join(" · ")}</p>
         )}
         <div className="release-detail-actions">
+          {canAcquire && onLibraryChange && (
+            <ReleaseLibraryChoice
+              medium={original.medium}
+              value={libraryId}
+              onChange={onLibraryChange}
+            />
+          )}
           {canAcquire && (
             <SourceReleaseDownload
+              libraryId={libraryId}
+              disabledReason={disabledReason}
               possibleCollection={item.possible_collection}
               reviewContext={reviewContext}
               searchId={searchId}

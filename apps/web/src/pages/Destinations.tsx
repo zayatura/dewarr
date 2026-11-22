@@ -22,8 +22,8 @@ import BookDialog from "../components/BookDialog";
 import AutomaticImportPolicy from "./AutomaticImportPolicy";
 import LibraryFolderRecovery from "./LibraryFolderRecovery";
 import {
+  defaultLibraryDestination,
   useLibraryFolderSettings,
-  selectLibraryDestination,
 } from "./libraryFolderSettings";
 import { randomUUID } from "../randomUUID";
 
@@ -228,9 +228,9 @@ export default function Destinations({
   );
   const options = useFolderOptions();
   const selected = (medium: Medium) =>
-    selectLibraryDestination(
+    defaultLibraryDestination(
       query.data?.destinations || [],
-      query.data?.defaults.effective?.[`${medium}_destination_id`],
+      query.data?.defaults.effective,
       medium,
     );
   const rows = (["ebook", "audio"] as const).flatMap((medium) => {

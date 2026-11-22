@@ -17,6 +17,30 @@ export function selectLibraryDestination(
   );
 }
 
+/**
+ * The folder a download uses when its request names no library, resolved the
+ * way the API does it: a saved folder, else the default library's only folder,
+ * else the only folder. Several candidates mean there is no default.
+ */
+export function defaultLibraryDestination(
+  destinations: Destination[],
+  preferences: Partial<Record<string, unknown>> | undefined,
+  medium: Medium,
+) {
+  const matching = destinations.filter(
+    (item) => item.medium === medium && item.enabled,
+  );
+  const library = preferences?.[`${medium}_library_id`];
+  const saved = matching.find(
+    (item) => item.id === preferences?.[`${medium}_destination_id`],
+  );
+  if (saved && (!library || saved.library_id === library)) return saved;
+  const candidates = library
+    ? matching.filter((item) => item.library_id === library)
+    : matching;
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
 export function useLibraryFolderSettings() {
   return useQuery({
     queryKey: ["library-folder-settings"],

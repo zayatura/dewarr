@@ -322,6 +322,19 @@
   flex-wrap: wrap;
   gap: 12px;
 }
+.release-library-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.release-library-choice {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
 .release-detail-actions a {
   display: inline-flex;
   align-items: center;

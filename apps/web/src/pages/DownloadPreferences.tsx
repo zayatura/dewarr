@@ -227,6 +227,8 @@ function Editor({
       ) : (
         <PreferenceFields
           defaults
+          // Administrators have no separate Libraries defaults page.
+          libraries={admin}
           overrides={overrides}
           inherited={current.inherited}
           origins={current.inherited_origins}

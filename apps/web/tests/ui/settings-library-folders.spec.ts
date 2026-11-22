@@ -101,3 +101,76 @@ test("each audiobook library gets its own folder card", async ({ page }) => {
   });
   expect(saved.destination_id).toBeUndefined();
 });
+
+test("no folder is marked default when the API would ask for a library", async ({
+  page,
+}) => {
+  const folder = (name: string, root_key: string) => ({
+    id: `folder-${name}`,
+    root_key,
+    medium: "audio",
+    workflow: "library",
+    library_id: `library-${name}`,
+    backend_path: `/audiobooks/${name}`,
+    local_path: `/audiobooks/${name}`,
+    mode: "hardlink",
+    enabled: true,
+    revision: name,
+    configured: true,
+    publication_available: true,
+    server_kind: "audiobookshelf",
+    client_routes: [],
+  });
+  await page.route("**/api/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    let data: unknown = [];
+    if (path === "/api/auth/me")
+      data = {
+        user: {
+          id: "admin",
+          role: "admin",
+          display_name: "Reader",
+          onboarding_status: "complete",
+        },
+        csrf_token: "test",
+      };
+    else if (path === "/api/setup/onboarding") data = { status: "completed" };
+    else if (path === "/api/library/libraries")
+      data = ["a", "b"].map((name) => ({
+        id: `library-${name}`,
+        name: `Library ${name.toUpperCase()}`,
+        accessible: true,
+      }));
+    else if (path.startsWith("/api/acquisition/preferences/"))
+      data = {
+        effective: {},
+        inherited: {},
+        inherited_origins: {},
+        overrides: {},
+        revision: "one",
+      };
+    else if (path === "/api/organization/destinations")
+      // The oldest folder keeps the legacy key; that alone is not a default.
+      data = [folder("a", "library-audio"), folder("b", "library-audio-b")];
+    else if (path.endsWith("/automatic-import"))
+      data = { enabled: true, requested_enabled: true, generation: 1 };
+    return route.fulfill({ json: data });
+  });
+  await page.goto("/settings#libraries");
+  for (const name of ["A", "B"])
+    await expect(
+      page.getByRole("region", {
+        name: `Audiobooks destination for Library ${name}`,
+      }),
+    ).toBeVisible();
+  await expect(page.getByText("Default", { exact: true })).toHaveCount(0);
+  // Administrators choose default libraries with their download defaults.
+  await page.goto("/settings#preferences");
+  const audio = page.getByRole("combobox", { name: "Audiobook library" });
+  await expect(audio).toBeVisible();
+  await expect(audio.locator("option")).toContainText([
+    "Choose during acquisition",
+    "Library A",
+    "Library B",
+  ]);
+});

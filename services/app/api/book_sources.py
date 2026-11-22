@@ -322,11 +322,18 @@ async def download_release(
     db: Database,
     idempotency_key: str = Header(min_length=8, max_length=160),
     use_wedge: bool = Query(False),
+    library_id: UUID | None = None,
 ):
     from app.domain.quick_add import selected_release
 
     operation = await selected_release(
-        db, user, search_id, result_id, idempotency_key, use_wedge=use_wedge
+        db,
+        user,
+        search_id,
+        result_id,
+        idempotency_key,
+        use_wedge=use_wedge,
+        library_id=library_id,
     )
     await db.flush()
     await db.refresh(operation)

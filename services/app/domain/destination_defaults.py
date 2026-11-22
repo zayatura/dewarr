@@ -55,10 +55,13 @@ async def destination_default(db, user, medium, library_id, saved_id):
             f"Set up an {label} library folder in Settings → Libraries before downloading.",
         )
     if len(destinations) > 1:
+        # Administrators set default libraries with their download defaults;
+        # other accounts set them on their Libraries page.
+        page = "Download preferences" if user.role == "admin" else "Libraries"
         raise HTTPException(
             422,
             f"Several {label} library folders are configured. Choose the {label} "
-            "library for this request, or set a default library in Settings → "
-            "Download preferences.",
+            f"library for this download, or set a default {label} library in "
+            f"Settings → {page}.",
         )
     return destinations[0]
