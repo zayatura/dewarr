@@ -12764,6 +12764,49 @@
         }
       }
     },
+    "/api/acquisition/downloads/{attempt_id}/review": {
+      "get": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Own Review",
+        "operationId": "own_review_api_acquisition_downloads__attempt_id__review_get",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attempt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnReviewView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/acquisition/recovery/approvals": {
       "get": {
         "tags": [
@@ -33067,6 +33110,60 @@
         ],
         "title": "OutboundReconciliationView"
       },
+      "OwnReviewView": {
+        "properties": {
+          "attempt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Attempt Id"
+          },
+          "selection_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Selection Id"
+          },
+          "work_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Work Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Authors"
+          },
+          "medium": {
+            "type": "string",
+            "title": "Medium"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "can_reject": {
+            "type": "boolean",
+            "title": "Can Reject"
+          }
+        },
+        "type": "object",
+        "required": [
+          "attempt_id",
+          "selection_id",
+          "work_id",
+          "title",
+          "authors",
+          "medium",
+          "message",
+          "can_reject"
+        ],
+        "title": "OwnReviewView"
+      },
       "PackBook": {
         "properties": {
           "work_id": {
@@ -42340,6 +42437,11 @@
                 "type": "null"
               }
             ]
+          },
+          "own_review": {
+            "type": "boolean",
+            "title": "Own Review",
+            "default": false
           }
         },
         "type": "object",

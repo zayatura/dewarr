@@ -118,6 +118,8 @@ class TargetView(BaseModel):
     shared_books: list[str] = Field(default_factory=list)
     transfer_notes: list[str] = Field(default_factory=list)
     replacement: ReplacementView | None = None
+    # The requester can open their own held download (admins use the review page).
+    own_review: bool = False
 
 
 class ReasonView(BaseModel):
@@ -692,6 +694,8 @@ async def _decorate_target(db, user, intent, target: TargetView, *, row) -> None
                     if user.role == "admin"
                     else f"{automatic.message}. An administrator will check this download."
                 )
+                selected = await db.get(AcquisitionSelection, selection_id)
+                target.own_review = user.role != "admin" and selected.owner_id == user.id
             elif automatic.import_run_id and automatic.evidence.get("held_groups"):
                 selected = await db.get(AcquisitionSelection, selection_id)
                 planned = await db.scalar(

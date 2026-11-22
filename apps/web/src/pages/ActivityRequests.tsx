@@ -26,6 +26,7 @@ import type { components } from "../api/schema";
 import { Notice } from "../components";
 import InfiniteScroll from "../components/InfiniteScroll";
 import BookDialog from "../components/BookDialog";
+import OwnDownloadReview from "../components/OwnDownloadReview";
 import { usePagedQuery } from "../hooks/usePagedQuery";
 import { randomUUID } from "../randomUUID";
 import DownloadConstraints from "./DownloadConstraints";
@@ -463,6 +464,7 @@ function targetActions(
   canManage: boolean,
   onTransfer: (attemptId: string, cancel: boolean) => void,
   onClaim: (target: Target) => void,
+  onReview: (attemptId: string) => void,
 ) {
   if (target.state === "satisfied") return [];
   const qualify = (label: string) =>
@@ -495,6 +497,14 @@ function targetActions(
       onSelect: () => onClaim(target),
     });
   }
+  // The requester's own held download; administrators use the review page instead.
+  if (target.own_review && target.attempt_id)
+    actions.push({
+      key: `own-review-${target.slot}`,
+      label: qualify("Review download"),
+      icon: ClipboardCheck,
+      onSelect: () => onReview(target.attempt_id!),
+    });
   if (canManage && target.can_cancel && target.attempt_id)
     actions.push({
       key: `cancel-${target.slot}`,
@@ -593,6 +603,7 @@ function RequestCard({
     .filter(Boolean)
     .join(" · ");
   const [withdrawReason, setWithdrawReason] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const requestActions: RowAction[] = [];
   if (request.can_decide)
     requestActions.push({
@@ -620,6 +631,7 @@ function RequestCard({
       canManage,
       onTransfer,
       onClaim,
+      setReviewing,
     );
     const primary = actions.find(
       (action) => !action.danger && !action.label.startsWith("Recheck"),
@@ -896,6 +908,16 @@ function RequestCard({
           </Fragment>
         );
       })}
+      {reviewing && (
+        <tr>
+          <td colSpan={7} className="request-dialog-cell">
+            <OwnDownloadReview
+              attemptId={reviewing}
+              close={() => setReviewing(null)}
+            />
+          </td>
+        </tr>
+      )}
       {withdrawReason && (
         <tr>
           <td colSpan={7} className="request-dialog-cell">

@@ -3789,6 +3789,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/acquisition/downloads/{attempt_id}/review": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Own Review */
+    get: operations["own_review_api_acquisition_downloads__attempt_id__review_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/acquisition/recovery/approvals": {
     parameters: {
       query?: never;
@@ -11229,6 +11246,34 @@ export interface components {
         [key: string]: unknown;
       }[];
     };
+    /** OwnReviewView */
+    OwnReviewView: {
+      /**
+       * Attempt Id
+       * Format: uuid
+       */
+      attempt_id: string;
+      /**
+       * Selection Id
+       * Format: uuid
+       */
+      selection_id: string;
+      /**
+       * Work Id
+       * Format: uuid
+       */
+      work_id: string;
+      /** Title */
+      title: string;
+      /** Authors */
+      authors: string[];
+      /** Medium */
+      medium: string;
+      /** Message */
+      message: string;
+      /** Can Reject */
+      can_reject: boolean;
+    };
     /** PackBook */
     PackBook: {
       /**
@@ -14735,6 +14780,11 @@ export interface components {
       /** Transfer Notes */
       transfer_notes?: string[];
       replacement?: components["schemas"]["ReplacementView"] | null;
+      /**
+       * Own Review
+       * @default false
+       */
+      own_review: boolean;
     };
     /** TorrentDescriptor */
     TorrentDescriptor: {
@@ -23187,6 +23237,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RepairView"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  own_review_api_acquisition_downloads__attempt_id__review_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OwnReviewView"];
         };
       };
       /** @description Validation Error */

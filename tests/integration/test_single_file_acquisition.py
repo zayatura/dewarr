@@ -68,6 +68,8 @@ from tests.media_fixtures import audio, epub
 
 pytestmark = pytest.mark.integration
 
+OTHER_LANGUAGE = {"automatic-other-language", "automatic-other-language-requester"}
+
 
 @pytest.mark.parametrize("save_relative", ["", "nested"])
 @pytest.mark.parametrize(
@@ -99,6 +101,7 @@ pytestmark = pytest.mark.integration
         "automatic-subtitle-audio",
         "automatic-linked-ebook",
         "automatic-other-language",
+        "automatic-other-language-requester",
         "automatic-obfuscated-font",
         "automatic-multiple-isbns",
         "automatic-multiple-isbns-unlisted",
@@ -228,7 +231,7 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             language="en-US"
             if handoff in {"automatic-linked-ebook", "automatic-language-alias"}
             else "Deutsch"
-            if handoff == "automatic-other-language"
+            if handoff in OTHER_LANGUAGE
             else "en",
             obfuscated_font=handoff == "automatic-obfuscated-font",
         )
@@ -371,7 +374,7 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             not in {
                 "automatic-linked-ebook",
                 "automatic-multiple-isbns-unlisted",
-                "automatic-other-language",
+                *OTHER_LANGUAGE,
             }
         ):
             catalog_title = (
@@ -385,7 +388,7 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
                     (await db.get(Work, UUID(old["work_id"]))).title = catalog_title
         if handoff == "automatic-ambiguous":
             await edition(database, work_id=UUID(old["work_id"]))
-        if handoff == "automatic-other-language":
+        if handoff in OTHER_LANGUAGE:
             # The book records no language, so the catalog's primary language applies.
             async with database() as db, db.begin():
                 (await db.get(Work, UUID(old["work_id"]))).language = None
@@ -558,11 +561,37 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
                 "The files name a different author" in context.json()["download"]["file_conflicts"]
             )
             assert context.json()["download"]["destination_id"] == route["destination"]["id"]
-        if handoff == "automatic-other-language":
+        if handoff in OTHER_LANGUAGE:
             # The hold names the disagreement, and the reviewer can send the release back.
             reason = "The files are in German, but this request expects English"
             assert auto.message == reason
             reviewer = review_account[0]
+        if handoff == "automatic-other-language-requester":
+            # The requester sees why it stopped and can reject it without an administrator.
+            target = (await owner_client.get("/api/requests")).json()["items"][0]["targets"][0]
+            assert target["own_review"] and target["needs_review"]
+            assert target["review_message"] == (
+                reason + ". An administrator will check this download."
+            )
+            admin_view = (await reviewer.get("/api/requests")).json()["items"][0]["targets"][0]
+            assert not admin_view["own_review"]
+            endpoint = f"/api/acquisition/downloads/{auto.attempt_id}/review"
+            own = (await owner_client.get(endpoint)).json()
+            assert own["message"] == reason and own["can_reject"], own
+            assert (await reviewer.get(endpoint)).status_code == 404
+            reported = await owner_client.post(
+                "/api/acquisition/recovery/reports",
+                json={"selection_id": own["selection_id"], "reason": "wrong-language"},
+            )
+            assert reported.status_code == 202, reported.text
+            assert not (await owner_client.get(endpoint)).json()["can_reject"]
+            target = (await owner_client.get("/api/requests")).json()["items"][0]["targets"][0]
+            assert target["replacement"]["reason"] == "Reported problem: wrong-language"
+            assert not target["needs_review"] and not target["own_review"]
+            assert (await reviewer.get("/api/requests/counts")).json()["review"] == 0
+            assert source.exists()
+            return
+        if handoff == "automatic-other-language":
             endpoint = f"/api/organization/inspections/{auto.inspection_id}"
             download = (await reviewer.get(endpoint)).json()["download"]
             assert download["mismatches"] == [{"field": "language", "message": reason}]

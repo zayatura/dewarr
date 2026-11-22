@@ -57,6 +57,7 @@ from app.api import (
     oidc,
     operations,
     organization,
+    own_reviews,
     plex,
     prowlarr,
     reading_accounts,
@@ -197,6 +198,7 @@ def create_app() -> FastAPI:
     app.include_router(identity.router, prefix="/api")
     app.include_router(requests.router, prefix="/api")
     app.include_router(download_attempts.router, prefix="/api")
+    app.include_router(own_reviews.router, prefix="/api")
     from app.api import download_recovery
 
     app.include_router(download_recovery.router, prefix="/api")
