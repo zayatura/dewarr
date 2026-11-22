@@ -242,6 +242,27 @@ async def hold(db, row, message):
     await event(db, row, "gave-up")
 
 
+async def retire_held(db, intent_id, slot):
+    """Close replacement searches that stopped for this request; their blocklist stays.
+
+    A held replacement pauses its request until someone acts. Picking a release by
+    hand is that action. The caller's transaction undoes this if the pick fails.
+    """
+    rows = await db.scalars(
+        select(DownloadRecovery)
+        .join(AcquisitionSelection, AcquisitionSelection.id == DownloadRecovery.selection_id)
+        .join(AcquisitionTarget, AcquisitionTarget.id == AcquisitionSelection.target_id)
+        .where(
+            AcquisitionTarget.intent_id == intent_id,
+            AcquisitionTarget.slot == slot,
+            DownloadRecovery.state == "held",
+        )
+        .with_for_update(of=DownloadRecovery)
+    )
+    for row in rows:
+        row.state, row.message = "complete", "Replaced by a release chosen by hand"
+
+
 async def history(db, selection):
     rows = (
         await db.execute(

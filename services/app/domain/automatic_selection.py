@@ -223,6 +223,11 @@ async def context(db, user_id, body, *, recovery_selection_id=None):
     if not intent or intent.owner_id != user_id:
         raise HTTPException(404, "Request not found")
     work = await acquisition_lock(db, intent.work_id)
+    if body.result_id and not recovery_selection_id:
+        from app.domain.download_recovery import retire_held
+
+        # A release picked by hand takes over from a replacement search that gave up.
+        await retire_held(db, intent.id, body.slot)
     await evaluate(db, user, intent)
     await db.flush()
     target = await db.scalar(

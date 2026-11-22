@@ -465,3 +465,33 @@ async def test_notification_bridge_uses_transactional_deduplicated_events(
     ]
     assert len({c["key"] for c in calls}) == 3
     assert all(c["key"].startswith(f"recovery:{failed_source['recovery_id']}:") for c in calls)
+
+
+async def test_a_release_picked_by_hand_takes_over_from_a_stopped_replacement(
+    client, database, failed_source
+):
+    old = failed_source
+    result_id, _, _ = await additional_candidate(database, old, source_id="502")
+    async with database() as db, db.begin():
+        recovery = await db.get(DownloadRecovery, old["recovery_id"])
+        recovery.state = "held"
+        recovery.message = "No release qualified for automatic download"
+
+    async def pick(body, key):
+        return await client.post(
+            "/api/acquisition/automatic-selections",
+            json=body,
+            headers={"Idempotency-Key": key},
+        )
+
+    # The stopped replacement keeps the request paused for automatic selection...
+    assert (await pick(old["body"], "automatic-again")).status_code == 409
+    # ...but a release chosen by hand is the decision it was waiting for.
+    response = await pick({**old["body"], "result_id": str(result_id)}, "picked-by-hand")
+    assert response.status_code == 202, response.text
+    async with database() as db:
+        recovery = await db.get(DownloadRecovery, old["recovery_id"])
+        assert recovery.state == "complete"
+        assert recovery.message == "Replaced by a release chosen by hand"
+        # The rejected release stays blocked for this book.
+        assert await db.scalar(select(func.count()).select_from(ReleaseBlock)) == 1

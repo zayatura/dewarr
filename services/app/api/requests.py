@@ -698,7 +698,7 @@ async def _decorate_target(db, user, intent, target: TargetView, *, row) -> None
     recovery = await db.scalar(
         select(DownloadRecovery).where(DownloadRecovery.selection_id == selection_id)
     )
-    if recovery and recovery.state != "retried" and target.state != "satisfied":
+    if recovery and recovery.state not in {"retried", "complete"} and target.state != "satisfied":
         # Describe the replacement, not the rejected transfer it supersedes.
         target.replacement = ReplacementView(
             state=recovery.state, reason=recovery.reason, message=recovery.message
