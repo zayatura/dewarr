@@ -172,6 +172,14 @@ async def cancel_entry(run_id: UUID, entry_id: UUID, admin: Admin, db: Database)
         entry.message = "Unstarted import stopped; you can review a new plan"
     else:
         operation = await db.get(Operation, entry.operation_id)
+        # A library check scheduled for later has not started; stop now instead.
+        await db.execute(
+            text(
+                "UPDATE book_queue.procrastinate_jobs SET status = 'cancelled' "
+                "WHERE id = :id AND status = 'todo' AND scheduled_at > now()"
+            ),
+            {"id": operation.job_id},
+        )
         status = await db.scalar(
             text("SELECT status::text FROM book_queue.procrastinate_jobs WHERE id=:id"),
             {"id": operation.job_id},
@@ -244,11 +252,19 @@ async def retry_entry(run_id: UUID, entry_id: UUID, admin: Admin, db: Database):
     # Never restart a live job solely because its observation is delayed.
     from sqlalchemy import text
 
+    # A library check scheduled for later has not started; replace it with this retry.
+    waiting = await db.scalar(
+        text(
+            "UPDATE book_queue.procrastinate_jobs SET status = 'cancelled' "
+            "WHERE id = :id AND status = 'todo' AND scheduled_at > now() RETURNING id"
+        ),
+        {"id": operation.job_id},
+    )
     status = await db.scalar(
         text("SELECT status::text FROM book_queue.procrastinate_jobs WHERE id=:id"),
         {"id": operation.job_id},
     )
-    if status in {"todo", "doing"}:
+    if not waiting and status in {"todo", "doing"}:
         return await view(db, run)
     destination = await db.get(ImportDestination, entry.destination_id)
     current = await destination_configuration(db, destination)

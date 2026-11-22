@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.config import get_settings
 from app.db.models import (
@@ -194,6 +194,21 @@ async def test_waiting_for_backend_never_claims_ownership_or_republishes(
         "entries"
     ][0]
     assert current["state"] == "awaiting-library" and current["asset_id"] is None
+    # The next look is seconds away, not the once-a-minute sweep.
+    async with database() as db:
+        waiting = await db.scalar(
+            select(ImportEntry).where(ImportEntry.operation_id == UUID(current["operation_id"]))
+        )
+        assert waiting.next_check_at - datetime.now(UTC) < timedelta(seconds=10)
+        operation = await db.get(Operation, waiting.operation_id)
+        scheduled = await db.scalar(
+            text(
+                "SELECT scheduled_at FROM book_queue.procrastinate_jobs "
+                "WHERE id = :id AND status = 'todo'"
+            ),
+            {"id": operation.job_id},
+        )
+        assert scheduled and scheduled - datetime.now(UTC) < timedelta(seconds=10)
     original_inode = next(route["target"].rglob("*.epub")).stat().st_ino
     (route["source"] / "pack/book.epub").unlink()
     route["scan_backend"].detect = True
@@ -335,6 +350,15 @@ async def test_backend_mismatch_holds_import_without_claiming_ownership(
         assert await db.scalar(select(func.count()).select_from(LibraryAsset)) == 0
 
 
+async def past_quick_checks(db, entry):
+    """Skip the quick looks after publishing, so the minute sweep takes over."""
+    entry.published_at = datetime.now(UTC) - timedelta(minutes=2)
+    await db.execute(
+        text("UPDATE book_queue.procrastinate_jobs SET status = 'cancelled' WHERE id = :id"),
+        {"id": (await db.get(Operation, entry.operation_id)).job_id},
+    )
+
+
 async def test_periodic_confirmation_requeues_once_without_republishing(
     client, admin, database, ready_route
 ):
@@ -346,7 +370,14 @@ async def test_periodic_confirmation_requeues_once_without_republishing(
     async with database() as db, db.begin():
         entry = await db.get(ImportEntry, entry_id)
         entry.next_check_at = datetime.now(UTC) - timedelta(minutes=1)
-        previous_job = (await db.get(Operation, entry.operation_id)).job_id
+        quick_job = (await db.get(Operation, entry.operation_id)).job_id
+    # A pending quick check after publishing keeps the sweep from queuing another.
+    await schedule_import_confirmation(0)
+    async with database() as db, db.begin():
+        entry = await db.get(ImportEntry, entry_id)
+        assert (await db.get(Operation, entry.operation_id)).job_id == quick_job
+        await past_quick_checks(db, entry)
+        previous_job = quick_job
     await asyncio.gather(*(schedule_import_confirmation(0) for _ in range(2)))
     async with database() as db:
         entry = await db.get(ImportEntry, entry_id)
@@ -382,6 +413,7 @@ async def test_waiting_imports_share_discovery_and_one_scan(
         original = await db.get(ImportEntry, original_id)
         assert original.state == "awaiting-library" and original.published_at
         original.next_check_at = datetime.now(UTC) - timedelta(seconds=1)
+        await past_quick_checks(db, original)
         # Two durable confirmations referring to already-published evidence.
         values = {
             column.name: copy.deepcopy(getattr(original, column.name))

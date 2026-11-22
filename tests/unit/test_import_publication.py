@@ -1089,3 +1089,17 @@ def test_staging_rebind_preserves_unrecognized_or_conflicting_files(specificatio
     assert {file.name: file.read_bytes() for file in stage.iterdir()} == before
     assert not (spec.destination_root / spec.folder).exists()
     assert json.loads(journal.read_text())["stage_identity"] == receipt["stage_identity"]
+
+
+def test_library_checks_come_quickly_after_publishing_then_each_minute():
+    from datetime import timedelta
+
+    from app.importing.execution import soon_after_publishing
+
+    assert [soon_after_publishing(timedelta(seconds=value)) for value in (0, 6, 20, 40, 70)] == [
+        5,
+        10,
+        20,
+        30,
+        None,
+    ]

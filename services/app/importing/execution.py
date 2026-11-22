@@ -698,6 +698,35 @@ async def finish_state(entry_id, token, state, message, *, receipt=None):
             else "failed"
         )
         operation.message = message
+        if state == "awaiting-library" and entry.published_at:
+            # Library watchers usually see a new folder within seconds; look again soon
+            # instead of waiting for the once-a-minute confirmation sweep.
+            delay = soon_after_publishing(datetime.now(UTC) - entry.published_at)
+            if delay:
+                from app.jobs.queue import enqueue
+
+                entry.next_check_at = datetime.now(UTC) + timedelta(seconds=delay)
+                operation.status = "queued"
+                operation.job_id = await enqueue(
+                    db,
+                    "organization.publish",
+                    operation_id=str(operation.id),
+                    job_queue="confirmation",
+                    schedule_in={"seconds": delay},
+                )
+
+
+# Seconds until the next library check, by time since publishing; then every minute.
+QUICK_CHECKS = (
+    (timedelta(seconds=5), 5),
+    (timedelta(seconds=15), 10),
+    (timedelta(seconds=35), 20),
+    (timedelta(seconds=65), 30),
+)
+
+
+def soon_after_publishing(elapsed):
+    return next((delay for limit, delay in QUICK_CHECKS if elapsed < limit), None)
 
 
 async def confirm_observation(db, current, integration, library, item, observed_cover, actor_id):
