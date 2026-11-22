@@ -222,7 +222,8 @@ export default function SourceReleaseDetails({
                       : transferSize(release.size_bytes),
                   Seeds: release.seeders?.toLocaleString() ?? "Unknown",
                   Narrators: release.narrators?.join(", ") || "Not supplied",
-                  Language: release.language || "Not supplied",
+                  Language:
+                    item.language_name || release.language || "Not supplied",
                   ...(mam
                     ? {
                         Leechers: mam.leechers?.toLocaleString() ?? "Unknown",

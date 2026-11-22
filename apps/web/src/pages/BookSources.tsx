@@ -337,11 +337,13 @@ function Results({
   const text = view.get("releaseFilter") || "";
   const source = view.get("releaseSource") || "";
   const format = view.get("releaseFormat") || "";
+  const language = view.get("releaseLanguage") || "";
   const hideBlocked = view.get("releaseAvailable") === "1";
   const setSort = (v: string) => updateView({ releaseSort: v });
   const setText = (v: string) => updateView({ releaseFilter: v });
   const setSource = (v: string) => updateView({ releaseSource: v });
   const setFormat = (v: string) => updateView({ releaseFormat: v });
+  const setLanguage = (v: string) => updateView({ releaseLanguage: v });
   const setHideBlocked = (v: boolean) =>
     updateView({ releaseAvailable: v ? "1" : null });
   const resultsHeading = useRef<HTMLParagraphElement>(null);
@@ -355,6 +357,10 @@ function Results({
       ),
     ),
   ].sort();
+  const languages = [
+    ...new Set(data.items.map((item) => item.language_name || "")),
+  ].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b)));
+  const showLanguages = languages.length > 1;
   const hasUnknownFormat = data.items.some(
     ({ release }) => !release.formats?.length,
   );
@@ -376,15 +382,23 @@ function Results({
         : sort === "smallest" || sort === "largest"
           ? hasSize
           : true));
+  // "unknown" selects releases whose source did not state a language.
+  const languageValid =
+    !language ||
+    (showLanguages &&
+      languages.includes(language === "unknown" ? "" : language));
+  const activeLanguage = languageValid ? language : "";
   const activeSource = sourceValid ? source : "";
   const activeFormat = formatValid ? format : "";
   const activeSort = sortValid ? sort : "profile";
   useEffect(() => {
     if (!sourceValid) setSource("");
     if (!formatValid) setFormat("");
+    if (!languageValid) setLanguage("");
     if (!sortValid) setSort("profile");
-    if (!sourceValid || !formatValid || !sortValid) setPageIndex(0);
-  }, [sourceValid, formatValid, sortValid]);
+    if (!sourceValid || !formatValid || !languageValid || !sortValid)
+      setPageIndex(0);
+  }, [sourceValid, formatValid, languageValid, sortValid]);
   const needle = text.trim().toLowerCase();
   const filtered = data.items
     .map((item, rank) => ({ item, rank }))
@@ -392,6 +406,8 @@ function Results({
       const release = item.release;
       return (
         (!activeSource || sourceKey(release) === activeSource) &&
+        (!activeLanguage ||
+          (item.language_name || "unknown") === activeLanguage) &&
         (!activeFormat ||
           (activeFormat === "unknown"
             ? !release.formats?.length
@@ -431,6 +447,7 @@ function Results({
     needle ||
     activeSource ||
     activeFormat ||
+    activeLanguage ||
     hideBlocked
   );
   const visibleCount = (pageIndex + 1) * 50;
@@ -585,6 +602,25 @@ function Results({
                 </select>
               </label>
             )}
+            {showLanguages && (
+              <label>
+                <span className="sr-only">Release language</span>
+                <select
+                  value={activeLanguage}
+                  onChange={(event) => {
+                    setLanguage(event.target.value);
+                    setPageIndex(0);
+                  }}
+                >
+                  <option value="">All languages</option>
+                  {languages.map((value) => (
+                    <option key={value || "unknown"} value={value || "unknown"}>
+                      {value || "Language not stated"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="check-label">
               <input
                 type="checkbox"
@@ -604,6 +640,7 @@ function Results({
                 setText("");
                 setSource("");
                 setFormat("");
+                setLanguage("");
                 setHideBlocked(false);
                 setSort("profile");
                 setPageIndex(0);
@@ -668,6 +705,7 @@ function Results({
                     </button>
                     <small>
                       {sourceName(item.release)} · #{rank + 1}
+                      {item.language_name ? ` · ${item.language_name}` : ""}
                       {unavailableReason(item)
                         ? ` · ${unavailableReason(item)}`
                         : item.assessment.blocked.length

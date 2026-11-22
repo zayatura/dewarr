@@ -35663,6 +35663,17 @@
                 "type": "null"
               }
             ]
+          },
+          "language_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language Name"
           }
         },
         "type": "object",

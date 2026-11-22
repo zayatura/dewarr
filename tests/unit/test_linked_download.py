@@ -379,3 +379,34 @@ def test_request_language_holds_files_in_another_language():
         ]
         == "The release is in German, but this request expects English"
     )
+
+
+@pytest.mark.parametrize("label", ["HUN", "hun", "hu", "Hungarian", "Magyar", "hu-HU"])
+def test_every_form_of_a_language_matches_the_picker_code(label):
+    from app.domain.acquisition import language_accepts
+    from app.importing.match_evidence import language_key
+
+    # MAM lists "HUN", tags say "Magyar", and requests store the picker's "hu".
+    assert language_accepts("hu", label)
+    assert not language_accepts("en", label)
+    assert language_key(label) == "hu"
+
+
+def test_hungarian_files_satisfy_a_hungarian_request_and_hold_an_english_one():
+    from app.importing.linked_download import request_mismatches
+    from app.importing.match_evidence import language_key
+
+    work = SimpleNamespace(
+        title="Harbor Lights", authors=["Author A"], language=None, metadata_fields={}
+    )
+    release = {"source": "mam", "title": "Harbor Lights", "authors": ["Author A"]}
+    facts = MatchEvidence(
+        titles=["harbor lights"], authors=[["author a"]], languages=[language_key("Magyar")]
+    )
+    assert agrees_with_request(work, release, facts, language="hu")
+    assert request_mismatches(work, release, facts, language="en") == [
+        {
+            "field": "language",
+            "message": "The files are in Hungarian, but this request expects English",
+        }
+    ]

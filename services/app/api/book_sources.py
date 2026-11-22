@@ -75,6 +75,8 @@ class RankedReleaseView(BaseModel):
     possible_collection: bool = False
     query_keys: list[str] = Field(default_factory=list)
     download: release_download_status.ReleaseDownloadStatus | None = None
+    # The source's language label ("GER") as a readable name ("German").
+    language_name: str | None = None
 
 
 class CatalogPreparationItem(BaseModel):
@@ -134,10 +136,34 @@ async def view(db, user, operation_id):
     )
     ranked = []
     work = {**payload["work"], "identifiers": payload.get("identifiers", [])}
+    from app.db.models import ReleaseBlock
+    from app.domain.catalog_language import language_name
+    from app.domain.release_blocklist import release_keys
+    from app.domain.work_graph import family_ids
+
+    # Releases rejected or reported for this book cannot be downloaded for it again.
+    blocks = list(
+        await db.scalars(
+            select(ReleaseBlock).where(
+                ReleaseBlock.work_id.in_(family_ids(UUID(payload["work"]["id"]))),
+                ReleaseBlock.active.is_(True),
+            )
+        )
+    )
     for row in rows:
         release = parse_release(row.source_key, row.release_snapshot)
         release = catalog_language_release(release, work)
         assessment = assess_release(release, work, preferences, payload["medium"])
+        keys = set(release_keys(release)[1])
+        if block := next(
+            (
+                item
+                for item in blocks
+                if item.medium == release.medium and keys.intersection(item.identities)
+            ),
+            None,
+        ):
+            assessment.blocked.append(f"Blocked for this book ({block.reason})")
         if not changed and (authors := indexer_title_authors(release, work)):
             # Display parsed credits without rewriting the saved source evidence.
             # Acquisition continues to assess the original name and source facts.
@@ -153,6 +179,7 @@ async def view(db, user, operation_id):
                 id=row.id,
                 release=release,
                 possible_collection=collection_candidate(release, work),
+                language_name=language_name(release.language),
                 download=downloads.get(release_download_status.identity(release)),
                 assessment=assessment,
                 expires_at=row.expires_at,

@@ -12,18 +12,11 @@ from app.domain.narrators import NarratorNames
 def language(value):
     if not value:
         return None
+    from app.domain.catalog_language import language_code
+
     parts = value.casefold().replace("_", "-").split("-")
-    parts[0] = {
-        "eng": "en",
-        "fra": "fr",
-        "fre": "fr",
-        "deu": "de",
-        "ger": "de",
-        "spa": "es",
-        "ita": "it",
-        "por": "pt",
-        "jpn": "ja",
-    }.get(parts[0], parts[0])
+    # Sources report three-letter codes ("HUN") where requests store "hu".
+    parts[0] = language_code(parts[0]) or parts[0]
     return "-".join(parts)
 
 

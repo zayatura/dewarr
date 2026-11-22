@@ -12180,6 +12180,8 @@ export interface components {
       /** Query Keys */
       query_keys?: string[];
       download?: components["schemas"]["ReleaseDownloadStatus"] | null;
+      /** Language Name */
+      language_name?: string | null;
     };
     /** ReadIssueView */
     ReadIssueView: {

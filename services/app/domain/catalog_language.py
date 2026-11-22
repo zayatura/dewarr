@@ -47,10 +47,89 @@ LANGUAGE_ALIASES = {
     "kor": "ko",
 }
 
-# Audio tags often name the language in that language ("Deutsch"). Kept apart from
-# LANGUAGE_ALIASES, which also reads release titles, where these words can be titles.
+# Every language in the web language picker: its ISO 639-1 code, ISO 639-2 codes
+# (bibliographic and terminology) and English name, so "hun", "HUN" and "Hungarian"
+# all equal the picker's "hu". Release-title parsing keeps the shorter list above.
+LANGUAGES = {
+    "en": ("eng", "English"),
+    "es": ("spa", "Spanish"),
+    "fr": ("fre fra", "French"),
+    "de": ("ger deu", "German"),
+    "it": ("ita", "Italian"),
+    "pt": ("por", "Portuguese"),
+    "nl": ("dut nld", "Dutch"),
+    "da": ("dan", "Danish"),
+    "sv": ("swe", "Swedish"),
+    "no": ("nor nob nno", "Norwegian"),
+    "fi": ("fin", "Finnish"),
+    "is": ("ice isl", "Icelandic"),
+    "pl": ("pol", "Polish"),
+    "cs": ("cze ces", "Czech"),
+    "sk": ("slo slk", "Slovak"),
+    "hu": ("hun", "Hungarian"),
+    "ro": ("rum ron", "Romanian"),
+    "bg": ("bul", "Bulgarian"),
+    "el": ("gre ell", "Greek"),
+    "uk": ("ukr", "Ukrainian"),
+    "ru": ("rus", "Russian"),
+    "tr": ("tur", "Turkish"),
+    "ar": ("ara", "Arabic"),
+    "he": ("heb", "Hebrew"),
+    "fa": ("per fas", "Persian"),
+    "hi": ("hin", "Hindi"),
+    "bn": ("ben", "Bengali"),
+    "ta": ("tam", "Tamil"),
+    "te": ("tel", "Telugu"),
+    "ur": ("urd", "Urdu"),
+    "id": ("ind", "Indonesian"),
+    "ms": ("may msa", "Malay"),
+    "vi": ("vie", "Vietnamese"),
+    "th": ("tha", "Thai"),
+    "ko": ("kor", "Korean"),
+    "ja": ("jpn", "Japanese"),
+    "zh": ("chi zho", "Chinese"),
+    "sw": ("swa", "Swahili"),
+    "af": ("afr", "Afrikaans"),
+    "sq": ("alb sqi", "Albanian"),
+    "am": ("amh", "Amharic"),
+    "hy": ("arm hye", "Armenian"),
+    "az": ("aze", "Azerbaijani"),
+    "eu": ("baq eus", "Basque"),
+    "be": ("bel", "Belarusian"),
+    "bs": ("bos", "Bosnian"),
+    "ca": ("cat", "Catalan"),
+    "et": ("est", "Estonian"),
+    "fil": ("tgl", "Filipino"),
+    "gl": ("glg", "Galician"),
+    "ka": ("geo kat", "Georgian"),
+    "gu": ("guj", "Gujarati"),
+    "hr": ("hrv", "Croatian"),
+    "kk": ("kaz", "Kazakh"),
+    "km": ("khm", "Khmer"),
+    "kn": ("kan", "Kannada"),
+    "ky": ("kir", "Kyrgyz"),
+    "lo": ("lao", "Lao"),
+    "lt": ("lit", "Lithuanian"),
+    "lv": ("lav", "Latvian"),
+    "mk": ("mac mkd", "Macedonian"),
+    "ml": ("mal", "Malayalam"),
+    "mn": ("mon", "Mongolian"),
+    "mr": ("mar", "Marathi"),
+    "my": ("bur mya", "Burmese"),
+    "ne": ("nep", "Nepali"),
+    "pa": ("pan", "Punjabi"),
+    "si": ("sin", "Sinhala"),
+    "sl": ("slv", "Slovenian"),
+    "sr": ("srp", "Serbian"),
+    "so": ("som", "Somali"),
+    "uz": ("uzb", "Uzbek"),
+    "zu": ("zul", "Zulu"),
+}
+
+# Audio tags often name the language in that language ("Deutsch", "Magyar").
 NATIVE_LANGUAGE_NAMES = {
     "deutsch": "de",
+    "magyar": "hu",
     "français": "fr",
     "francais": "fr",
     "español": "es",
@@ -63,14 +142,45 @@ NATIVE_LANGUAGE_NAMES = {
     "dansk": "da",
     "norsk": "no",
     "suomi": "fi",
+    "íslenska": "is",
     "polski": "pl",
+    "čeština": "cs",
+    "slovenčina": "sk",
+    "română": "ro",
+    "romana": "ro",
+    "türkçe": "tr",
+    "hrvatski": "hr",
+    "srpski": "sr",
+    "slovenščina": "sl",
+    "eesti": "et",
+    "latviešu": "lv",
+    "lietuvių": "lt",
+    "català": "ca",
+    "euskara": "eu",
+    "galego": "gl",
     "русский": "ru",
+    "українська": "uk",
+    "български": "bg",
+    "ελληνικά": "el",
+    "עברית": "he",
+    "العربية": "ar",
     "日本語": "ja",
     "中文": "zh",
     "한국어": "ko",
 }
 
-LANGUAGE_NAMES = {code: name.title() for name, code in LANGUAGE_ALIASES.items() if len(name) > 3}
+LANGUAGE_CODES = {
+    alias: code
+    for code, (codes, name) in LANGUAGES.items()
+    for alias in (code, *codes.split(), name.casefold())
+}
+LANGUAGE_CODES.update(NATIVE_LANGUAGE_NAMES)
+LANGUAGE_NAMES = {code: name for code, (_, name) in LANGUAGES.items()}
+
+
+def language_code(value):
+    """The picker's code for a code or name in any of the forms above, else None."""
+    return LANGUAGE_CODES.get(" ".join((value or "").casefold().split()))
 
 
 def language_name(value):
@@ -82,7 +192,7 @@ def language_name(value):
 def catalog_language(value):
     value = " ".join((value or "").lower().split()).replace("_", "-")
     parts = value.split("-")
-    base = LANGUAGE_ALIASES.get(parts[0]) or NATIVE_LANGUAGE_NAMES.get(parts[0], parts[0])
+    base = LANGUAGE_ALIASES.get(parts[0]) or LANGUAGE_CODES.get(parts[0], parts[0])
     # Script variants can be different readable editions, even within one language.
     if len(parts) > 1 and re.fullmatch(r"[a-z]{4}", parts[1]):
         return base + "-" + parts[1]
@@ -95,6 +205,6 @@ def catalog_language_sql(value):
         "",
     )
     base = func.split_part(value, "-", 1)
-    base = case({**NATIVE_LANGUAGE_NAMES, **LANGUAGE_ALIASES}, value=base, else_=base)
+    base = case({**LANGUAGE_CODES, **LANGUAGE_ALIASES}, value=base, else_=base)
     script = func.split_part(value, "-", 2)
     return case((script.op("~")(r"^[a-z]{4}$"), base + "-" + script), else_=base)
