@@ -5,25 +5,36 @@ import type { components } from "../api/schema";
 import { Loading, Notice } from "../components";
 import { Link } from "react-router-dom";
 import { randomUUID } from "../randomUUID";
+import DownloadComparison from "./DownloadComparison";
 
 type Inspection = components["schemas"]["InspectionView"];
 type Plan = components["schemas"]["FrozenPlanView"];
+type Rejection = components["schemas"]["RejectionView"];
+type RejectReason = components["schemas"]["RejectInput"]["reason"];
 
 /** A saved download needs a decision about its files, not another catalog workflow. */
 export default function DownloadMatchReview({
   inspection,
   retry,
   retrying,
+  rejected,
 }: {
   inspection: Inspection;
   retry: () => void;
   retrying: boolean;
+  rejected: (value: Rejection) => void;
 }) {
   const download = inspection.download!;
   const cache = useQueryClient();
   const [destinationId, setDestinationId] = useState("");
   const [complete, setComplete] = useState(false);
-  const [reviewingFiles, setReviewingFiles] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const mismatched = !!download.mismatches?.length;
+  const [reason, setReason] = useState<RejectReason>(
+    download.mismatches?.some((item) => item.field === "language")
+      ? "wrong-language"
+      : "wrong-book",
+  );
   const prepared = useRef<{
     plan: Plan;
     destination: { id: string; revision: string };
@@ -108,7 +119,7 @@ export default function DownloadMatchReview({
             file.path,
           )),
     ) || [];
-  const reason = unreadable.length
+  const problem = unreadable.length
     ? unreadable[0].reason ||
       "The downloaded book could not be read. Check its files and try again."
     : data?.grouping.content.groups.length === 0
@@ -145,10 +156,15 @@ export default function DownloadMatchReview({
         : destinations.length === 1
           ? destinations[0]
           : undefined);
+  // Dewarr can read every file, but only a person can tell whether a multi-file
+  // recording is missing a part. A single file is the whole download.
+  const several =
+    (group?.files.filter((file) => file.role === "media").length || 0) > 1;
+  const confirmed = !several || complete;
   const confirm = useMutation({
     mutationFn: async () => {
       if (!prepared.current) {
-        if (!data || !group || !destination || blocked || !complete)
+        if (!data || !group || !destination || blocked || !confirmed)
           throw new Error("Refresh the review before importing.");
         const version =
           candidate?.version_id ||
@@ -219,145 +235,198 @@ export default function DownloadMatchReview({
       ]);
     },
   });
+  const reject = useMutation({
+    mutationFn: async () =>
+      result(
+        await api.POST("/api/organization/inspections/{inspection_id}/reject", {
+          params: { path: { inspection_id: inspection.id } },
+          body: { reason },
+        }),
+      ),
+    onSuccess: async (value) => {
+      await cache.invalidateQueries({ queryKey: ["requests"] });
+      rejected(value);
+    },
+  });
+  const audio = download.medium === "audio";
   return (
     <section className="download-attention" aria-label="Download next step">
       {context.isPending ? (
         <Loading />
       ) : data ? (
-        blocked ? (
-          <>
-            <h3>This download needs a closer look</h3>
-            <p>{reason}</p>
-            {!!match?.evidence.titles?.length && (
-              <p className="download-file-title">
-                <span>Title found in the files</span>
-                <strong>{match.evidence.titles.join(" · ")}</strong>
-              </p>
-            )}
-            <div className="actions">
-              {!!unreadable.length && download.can_retry && (
-                <button className="primary" disabled={retrying} onClick={retry}>
-                  {retrying ? "Checking files…" : "Check files again"}
-                </button>
-              )}
-              <Link
-                className="button"
-                to={`/books/${download.work_id}?tab=sources`}
-              >
-                Find another download
-              </Link>
-              <Link to={`/books/${download.work_id}?tab=manage`}>
-                Review book metadata
-              </Link>
-            </div>
-          </>
-        ) : download.can_retry && !reviewingFiles ? (
-          <>
-            <h3>Finish checking the download</h3>
-            <p role="status">
-              {download.message ||
-                "Check the completed files again and add them to your library."}
-            </p>
-            <div className="actions">
-              <button className="primary" disabled={retrying} onClick={retry}>
-                {retrying ? "Checking download…" : "Continue automatically"}
-              </button>
-              <button onClick={() => setReviewingFiles(true)}>
-                Confirm completeness myself
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h3>Do these files contain the whole book?</h3>
-            <p>
-              {download.message ||
-                "Automatic checks could not establish whether these files contain the complete book."}
-            </p>
-            <dl className="import-evidence">
-              <div>
-                <dt>Inspected files</dt>
-                <dd>
-                  {group?.files.length || 0}{" "}
-                  {download.medium === "audio" ? "audio" : "ebook"} files ·
-                  readable files do not establish completeness
-                </dd>
-              </div>
-              <div>
-                <dt>Match evidence</dt>
-                <dd>
-                  {candidate?.reasons?.join(" · ") ||
-                    "No catalog edition was confidently identified. Your confirmation will use the inspected file edition."}
-                </dd>
-              </div>
-              <div>
-                <dt>Library destination</dt>
-                <dd>
-                  {destination?.backend_path || "Choose a library folder below"}
-                </dd>
-              </div>
-              <div>
-                <dt>File handling</dt>
-                <dd>Keep the download and add a library copy.</dd>
-              </div>
-            </dl>
-            <p>
-              Check the file list and recording or edition details before
-              confirming that every chapter is included. Missing chapters cannot
-              be inferred from a successful file read.
-            </p>
-            <label className="download-complete-check">
-              <input
-                type="checkbox"
-                checked={complete}
-                disabled={confirm.isPending || !!prepared.current}
-                onChange={(event) => setComplete(event.target.checked)}
-              />
-              <span>These files contain the complete book</span>
-            </label>
-            {needsDestination && (
-              <label className="download-destination">
-                Library folder
+        <>
+          <h3>
+            {blocked
+              ? "This download needs a closer look"
+              : "Is this the book that was requested?"}
+          </h3>
+          <p role="status">
+            {blocked
+              ? problem
+              : download.message ||
+                "Compare the files with the request, then add them to the library."}
+          </p>
+          <DownloadComparison
+            download={download}
+            inspection={inspection}
+            paths={group?.files.map((file) => file.path)}
+            identifiers={match?.evidence.identifiers}
+            evidenceTitles={match?.evidence.titles}
+          />
+          {rejecting ? (
+            <form
+              className="download-reject"
+              onSubmit={(event) => {
+                event.preventDefault();
+                reject.mutate();
+              }}
+            >
+              <label>
+                What is wrong with this release?
                 <select
-                  value={destinationId}
-                  onChange={(event) => setDestinationId(event.target.value)}
+                  value={reason}
+                  disabled={reject.isPending}
+                  onChange={(event) =>
+                    setReason(event.target.value as RejectReason)
+                  }
                 >
-                  <option value="">Choose a library folder</option>
-                  {destinations.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.backend_path}
-                    </option>
-                  ))}
+                  <option value="wrong-book">Wrong book</option>
+                  <option value="wrong-language">Wrong language</option>
+                  {audio && (
+                    <option value="wrong-narrator">Wrong narrator</option>
+                  )}
+                  <option value="incomplete">Missing parts or chapters</option>
+                  {audio && <option value="bad-audio">Bad audio</option>}
                 </select>
               </label>
-            )}
-            {(!destinations.length ||
-              (download.destination_id && !destination)) && (
               <p>
-                Connect a library folder in{" "}
-                <Link to="/settings#naming">Library settings</Link> to continue.
+                Dewarr blocks this release for the request and looks for another
+                one with the same requirements. The downloaded files stay in the
+                download folder, so seeding continues.
               </p>
-            )}
-            <div className="actions">
-              <button
-                className="primary"
-                disabled={!destination || !complete || confirm.isPending}
-                onClick={() => confirm.mutate()}
-              >
-                {confirm.isPending
-                  ? "Adding to library…"
-                  : prepared.current
-                    ? "Retry import"
-                    : "Add to library"}
-              </button>
-              <Link to={`/books/${download.work_id}?tab=sources`}>
-                Find another download
-              </Link>
-            </div>
-          </>
-        )
+              <div className="actions">
+                <button className="primary" disabled={reject.isPending}>
+                  {reject.isPending ? "Rejecting…" : "Reject and find another"}
+                </button>
+                <button
+                  type="button"
+                  disabled={reject.isPending}
+                  onClick={() => setRejecting(false)}
+                >
+                  Back
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              {!blocked && several && (
+                <>
+                  <p>
+                    Dewarr read every file, but it cannot tell whether a part is
+                    missing. Check the file list and the length before adding.
+                  </p>
+                  <label className="download-complete-check">
+                    <input
+                      type="checkbox"
+                      checked={complete}
+                      disabled={confirm.isPending || !!prepared.current}
+                      onChange={(event) => setComplete(event.target.checked)}
+                    />
+                    <span>These files contain the complete book</span>
+                  </label>
+                </>
+              )}
+              {!blocked && needsDestination && (
+                <label className="download-destination">
+                  Library folder
+                  <select
+                    value={destinationId}
+                    onChange={(event) => setDestinationId(event.target.value)}
+                  >
+                    <option value="">Choose a library folder</option>
+                    {destinations.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.backend_path}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {!blocked &&
+                (!destinations.length ||
+                  (download.destination_id && !destination)) && (
+                  <p>
+                    Connect a library folder in{" "}
+                    <Link to="/settings#naming">Library settings</Link> to
+                    continue.
+                  </p>
+                )}
+              <div className="actions">
+                {!blocked && (
+                  <button
+                    className={mismatched ? undefined : "primary"}
+                    disabled={!destination || !confirmed || confirm.isPending}
+                    onClick={() => confirm.mutate()}
+                  >
+                    {confirm.isPending
+                      ? "Adding to library…"
+                      : prepared.current
+                        ? "Retry import"
+                        : "Add to library"}
+                  </button>
+                )}
+                {blocked && !!unreadable.length && download.can_retry && (
+                  <button
+                    className="primary"
+                    disabled={retrying}
+                    onClick={retry}
+                  >
+                    {retrying ? "Checking files…" : "Check files again"}
+                  </button>
+                )}
+                <button
+                  className={
+                    (mismatched || blocked) && !unreadable.length
+                      ? "primary"
+                      : undefined
+                  }
+                  disabled={confirm.isPending || !!prepared.current}
+                  onClick={() => setRejecting(true)}
+                >
+                  Wrong book, find another
+                </button>
+                {!blocked && download.can_retry && (
+                  <button
+                    className="text-button"
+                    disabled={retrying}
+                    title="Run the automatic checks again, for example after correcting the book's catalog details"
+                    onClick={retry}
+                  >
+                    {retrying ? "Checking…" : "Check again"}
+                  </button>
+                )}
+              </div>
+              {!blocked && destination && (
+                <p className="download-handling">
+                  Adds a copy to {destination.backend_path}. The download stays
+                  where it is, so seeding continues.
+                </p>
+              )}
+              {blocked && (
+                <p className="download-links">
+                  <Link to={`/books/${download.work_id}?tab=sources`}>
+                    Choose a release yourself
+                  </Link>
+                  <Link to={`/books/${download.work_id}?tab=manage`}>
+                    Review book metadata
+                  </Link>
+                </p>
+              )}
+            </>
+          )}
+        </>
       ) : null}
-      <Notice error={context.error || confirm.error} />
+      <Notice error={context.error || confirm.error || reject.error} />
       {context.isError && (
         <button
           disabled={context.isFetching}

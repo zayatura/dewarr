@@ -1,5 +1,6 @@
 """Use the saved book association for one complete, unambiguous download."""
 
+import re
 from dataclasses import dataclass
 from types import SimpleNamespace
 from uuid import UUID
@@ -8,8 +9,8 @@ from sqlalchemy import select
 
 from app.db.models import AcquisitionSelection, DownloadAttempt, Version
 from app.domain.book_sources import identity
-from app.domain.catalog_titles import display_title
-from app.domain.identity import normalized
+from app.domain.catalog_language import LANGUAGE_NAMES, language_name
+from app.domain.catalog_titles import credit_key, display_title
 from app.domain.release_profiles import indexer_title_authors
 from app.domain.series_identity import title_outside_series_note
 from app.domain.title_matching import compatible_title
@@ -21,10 +22,18 @@ MULTIPLE_IDENTIFIERS = "Multiple edition identifiers require review"
 UNSUPPORTED_IDENTIFIERS = "Catalog identifiers do not support all embedded assertions"
 
 
-def request_file_conflicts(
+def author_key(name):
+    """Credits compare without punctuation or spacing: "Author A Example" is "Author A. Example"."""
+    return credit_key(name)
+
+
+def _authors(names):
+    return sorted(author_key(name) for name in names)
+
+
+def _file_conflicts(
     work, release, facts, *, series=(), reviewed_collection=False, verified_titles=()
 ):
-    """Absent tags are neutral; contradictory tags need a different download or correction."""
     catalog = {"title": work.title, "authors": work.authors, "series": list(series)}
     credited = release.get("source") in {"audiobookbay", "prowlarr"}
     title_agrees = bool(facts.titles) and all(
@@ -33,34 +42,66 @@ def request_file_conflicts(
         or value in verified_titles
         for value in facts.titles
     )
-    authors = sorted(normalized(name) for name in work.authors)
-    conflicts = list(facts.issues)
+    authors = _authors(work.authors)
+    conflicts = [("identifiers", issue) for issue in facts.issues]
     # Several ISBNs can describe formats of the same book. Independent title
     # and author tags can confirm a book request without selecting an edition.
-    if title_agrees and authors and facts.authors == [authors]:
-        conflicts = [issue for issue in conflicts if issue != MULTIPLE_IDENTIFIERS]
+    if title_agrees and authors and [_authors(names) for names in facts.authors] == [authors]:
+        conflicts = [item for item in conflicts if item[1] != MULTIPLE_IDENTIFIERS]
     if facts.titles and not title_agrees:
-        conflicts.append("The files name a different book")
+        conflicts.append(("title", "The files name a different book"))
     if any(
-        names != authors and not (credited and title_agrees and set(authors) <= set(names))
+        _authors(names) != authors
+        and not (credited and title_agrees and set(authors) <= set(_authors(names)))
         for names in facts.authors
     ):
-        conflicts.append("The files name a different author")
+        conflicts.append(("authors", "The files name a different author"))
     if work.language and any(value != language_key(work.language) for value in facts.languages):
-        conflicts.append("The files use a different language")
+        conflicts.append(("language", "The files use a different language"))
     return conflicts
 
 
-def agrees_with_request(work, release, facts, *, series=(), verified_titles=()):
-    # Missing tags are common in M4B files. Conflicting tags still require review.
-    if request_file_conflicts(
-        work, release, facts, series=series, verified_titles=verified_titles
-    ) or work.metadata_fields.get("identity_rejected"):
-        return False
+def request_file_conflicts(
+    work, release, facts, *, series=(), reviewed_collection=False, verified_titles=()
+):
+    """Absent tags are neutral; contradictory tags need a different download or correction."""
+    return [
+        message
+        for _, message in _file_conflicts(
+            work,
+            release,
+            facts,
+            series=series,
+            reviewed_collection=reviewed_collection,
+            verified_titles=verified_titles,
+        )
+    ]
+
+
+def request_mismatches(work, release, facts, *, series=(), verified_titles=(), language=None):
+    """Why the requested book cannot vouch for these files, as {field, message}.
+
+    Empty means the release and the files agree with the request. `language` is the
+    language the request expects when the catalog book does not record one.
+    """
+    found = [
+        {"field": field, "message": message}
+        for field, message in _file_conflicts(
+            work, release, facts, series=series, verified_titles=verified_titles
+        )
+    ]
+
+    def add(field, message):
+        if not any(item["message"] == message for item in found):
+            found.append({"field": field, "message": message})
+
+    if work.metadata_fields.get("identity_rejected"):
+        add("title", "This book's catalog identity was rejected; correct it before importing")
     title = display_title(work.title)
-    authors = sorted(normalized(name) for name in work.authors)
+    authors = _authors(work.authors)
     if not title or not authors:
-        return False
+        add("title", "The catalog book has no title or author to compare with")
+        return found
     catalog = {"title": work.title, "authors": work.authors, "series": list(series)}
     credited_source = release.get("source") in {"audiobookbay", "prowlarr"}
     file_titles_agree = bool(facts.titles) and all(
@@ -70,7 +111,7 @@ def agrees_with_request(work, release, facts, *, series=(), verified_titles=()):
         for value in facts.titles
     )
     file_authors_cover = bool(facts.authors) and all(
-        set(authors) <= set(value) for value in facts.authors
+        set(authors) <= set(_authors(value)) for value in facts.authors
     )
     file_corroborated = file_titles_agree and file_authors_cover
     shown = display_title(release.get("title", ""))
@@ -93,21 +134,42 @@ def agrees_with_request(work, release, facts, *, series=(), verified_titles=()):
         )
     )
     if not compatible_title(shown, work.title) and not credited_release:
-        return False
+        add("release_title", "The release has a different title")
     if facts.titles and not file_titles_agree:
-        return False
+        add("title", "The files name a different book")
     if any(
-        value != authors and not (credited_source and file_corroborated) for value in facts.authors
+        _authors(value) != authors and not (credited_source and file_corroborated)
+        for value in facts.authors
     ):
-        return False
-    release_authors = sorted(normalized(name) for name in release.get("authors", []))
+        add("authors", "The files name a different author")
+    release_authors = _authors(release.get("authors", []))
     if release_authors and release_authors != authors:
-        return False
+        add("release_authors", "The release credits a different author")
     if not release_authors and not facts.authors and not credited_release:
-        return False
-    if work.language and any(value != language_key(work.language) for value in facts.languages):
-        return False
-    return True
+        add("authors", "Neither the release nor the files name an author")
+    expected = language_key(work.language or language or "")
+    observed = {
+        value
+        for value in set(facts.languages)
+        or ({language_key(release["language"])} if release.get("language") else set())
+        # Unrecognized labels ("English (US)") stay neutral rather than hold a download.
+        if value in LANGUAGE_NAMES or re.fullmatch(r"[a-z]{2}", value)
+    }
+    if expected and observed - {expected}:
+        found_names = ", ".join(sorted(language_name(value) for value in observed - {expected}))
+        add(
+            "language",
+            f"The {'files are' if facts.languages else 'release is'} in {found_names}, "
+            f"but this request expects {language_name(expected)}",
+        )
+    return found
+
+
+def agrees_with_request(work, release, facts, *, series=(), verified_titles=(), language=None):
+    # Missing tags are common in M4B files. Conflicting tags still require review.
+    return not request_mismatches(
+        work, release, facts, series=series, verified_titles=verified_titles, language=language
+    )
 
 
 @dataclass(frozen=True)
@@ -116,6 +178,21 @@ class RequestFileMatch:
     titles: tuple[str, ...]
     conflicts: list[str]
     agrees: bool
+    mismatches: tuple[dict, ...] = ()
+    language: str | None = None
+    language_source: str | None = None
+
+
+async def expected_language(db, work, selection):
+    """The language a request expects: its own, the book's, else the catalog's primary."""
+    requested = (selection.frozen.get("requirements") or {}).get("language")
+    if requested:
+        return requested, "request"
+    if work.language:
+        return work.language, "book"
+    from app.domain.catalog_metadata import preferences
+
+    return (await preferences(db)).language or None, "settings"
 
 
 async def file_match(db, work, selection, inspection, group):
@@ -137,12 +214,19 @@ async def file_match(db, work, selection, inspection, group):
         titles = await corroborated_titles(
             db, work, selection, inspection, group, facts, catalog["series"]
         )
+    language, source = await expected_language(db, work, selection)
     options = {"series": catalog["series"], "verified_titles": titles}
+    mismatches = request_mismatches(
+        work, selection.frozen["release"], facts, **options, language=language
+    )
     return RequestFileMatch(
         work.id,
         titles,
         request_file_conflicts(work, selection.frozen["release"], facts, **options),
-        agrees_with_request(work, selection.frozen["release"], facts, **options),
+        not mismatches,
+        tuple(mismatches),
+        language,
+        source,
     )
 
 
@@ -165,6 +249,13 @@ async def inspection_match(db, inspection, group):
         return None
     work = await canonical_work(db, UUID(selection.frozen["origin_work_id"]))
     return await file_match(db, work, selection, inspection, group)
+
+
+async def request_hold_reason(db, selection, inspection, group):
+    """The first way the files or release disagree with the request, in plain words."""
+    work = await canonical_work(db, UUID(selection.frozen["origin_work_id"]))
+    decision = await file_match(db, work, selection, inspection, group)
+    return decision.mismatches[0]["message"] if decision.mismatches else None
 
 
 async def linked_version(db, approver, selection, inspection, group, grouping_revision, *, match):

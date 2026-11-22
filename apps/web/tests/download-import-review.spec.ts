@@ -161,7 +161,7 @@ test("linked downloads resume their saved import instead of asking for catalog m
     files.getByText("Project Hail Mary.m4b", { exact: true }),
   ).toBeVisible();
   await expect(
-    files.getByText("Readable · completeness still requires verification", {
+    files.getByText("Readable", {
       exact: true,
     }),
   ).toHaveCount(1);

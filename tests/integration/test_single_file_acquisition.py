@@ -28,6 +28,7 @@ from app.db.models import (
     DownloadAttempt,
     DownloadFulfillment,
     DownloadIdentityClaim,
+    DownloadRecovery,
     FrozenImportPlan,
     ImportEntry,
     ImportRun,
@@ -36,6 +37,7 @@ from app.db.models import (
     MetadataSettings,
     Operation,
     ProviderObject,
+    ReleaseBlock,
     SourceArtifact,
     SourceConnection,
     User,
@@ -96,6 +98,7 @@ pytestmark = pytest.mark.integration
         "automatic-identified-missing-tags-audio",
         "automatic-subtitle-audio",
         "automatic-linked-ebook",
+        "automatic-other-language",
         "automatic-obfuscated-font",
         "automatic-multiple-isbns",
         "automatic-multiple-isbns-unlisted",
@@ -224,6 +227,8 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             isbn="9781234567897" if automatic_mode and handoff != "automatic-unmatched" else None,
             language="en-US"
             if handoff in {"automatic-linked-ebook", "automatic-language-alias"}
+            else "Deutsch"
+            if handoff == "automatic-other-language"
             else "en",
             obfuscated_font=handoff == "automatic-obfuscated-font",
         )
@@ -362,7 +367,12 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
         if (
             medium == "ebook"
             and not provider_mode
-            and handoff not in {"automatic-linked-ebook", "automatic-multiple-isbns-unlisted"}
+            and handoff
+            not in {
+                "automatic-linked-ebook",
+                "automatic-multiple-isbns-unlisted",
+                "automatic-other-language",
+            }
         ):
             catalog_title = (
                 "First Harbor: A Journey Through the History of Coastal Life"
@@ -375,6 +385,10 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
                     (await db.get(Work, UUID(old["work_id"]))).title = catalog_title
         if handoff == "automatic-ambiguous":
             await edition(database, work_id=UUID(old["work_id"]))
+        if handoff == "automatic-other-language":
+            # The book records no language, so the catalog's primary language applies.
+            async with database() as db, db.begin():
+                (await db.get(Work, UUID(old["work_id"]))).language = None
         response = await review_account[0].put(
             f"/api/organization/destinations/{route['destination']['id']}/automatic-import",
             json={
@@ -544,6 +558,38 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
                 "The files name a different author" in context.json()["download"]["file_conflicts"]
             )
             assert context.json()["download"]["destination_id"] == route["destination"]["id"]
+        if handoff == "automatic-other-language":
+            # The hold names the disagreement, and the reviewer can send the release back.
+            reason = "The files are in German, but this request expects English"
+            assert auto.message == reason
+            reviewer = review_account[0]
+            endpoint = f"/api/organization/inspections/{auto.inspection_id}"
+            download = (await reviewer.get(endpoint)).json()["download"]
+            assert download["mismatches"] == [{"field": "language", "message": reason}]
+            assert download["expected_language"] == "English"
+            assert download["expected_language_source"] == "settings"
+            assert download["release"]["title"]
+            assert (await reviewer.get("/api/requests/counts")).json()["review"] == 1
+            denied = await owner_client.post(endpoint + "/reject", json={"reason": "wrong-book"})
+            assert denied.status_code == 403
+            rejected = await reviewer.post(endpoint + "/reject", json={"reason": "wrong-language"})
+            assert rejected.status_code == 202, rejected.text
+            assert rejected.json() == {
+                "work_id": old["work_id"],
+                "message": "Rejected in download review (wrong language); finding another release",
+            }
+            review = (await reviewer.get("/api/requests?status=review")).json()
+            assert review["items"] == []
+            assert (
+                await reviewer.post(endpoint + "/reject", json={"reason": "wrong-book"})
+            ).status_code == 409
+            assert (await reviewer.get("/api/requests/counts")).json()["review"] == 0
+            async with database() as db:
+                recovery = await db.scalar(select(DownloadRecovery))
+                assert recovery.reason == "Rejected in download review: Wrong language"
+                assert recovery.evidence["reported"]
+                assert await db.scalar(select(ReleaseBlock.id).where(ReleaseBlock.active))
+            assert source.exists()
         return
     if handoff in success:
         async with database() as db:

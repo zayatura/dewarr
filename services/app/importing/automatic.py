@@ -474,7 +474,7 @@ async def plan_ready(db, row, selection, inspection, approver, destination, curr
             (item for item in match.candidates if item.version_id == match.selected_version_id),
             None,
         )
-        linked = None
+        linked = request_reason = None
         if (
             not reason
             and match.status != "matched"
@@ -483,7 +483,7 @@ async def plan_ready(db, row, selection, inspection, approver, destination, curr
             and not continuation
             and not match.truncated
         ):
-            from app.importing.linked_download import linked_version
+            from app.importing.linked_download import linked_version, request_hold_reason
             from app.importing.matching import candidate_evidence
 
             linked = await linked_version(
@@ -492,6 +492,9 @@ async def plan_ready(db, row, selection, inspection, approver, destination, curr
             if linked:
                 work = await canonical_work(db, linked.work_id)
                 candidate = candidate_evidence(match.evidence, linked, work, work, False)
+            else:
+                # Say what disagrees with the request, not only that no edition matched.
+                request_reason = await request_hold_reason(db, selection, inspection, group)
         if not reason and match.status != "matched" and not linked and not match.truncated:
             from app.importing.linked_download import linked_collection_version
             from app.importing.matching import candidate_evidence
@@ -510,7 +513,7 @@ async def plan_ready(db, row, selection, inspection, approver, destination, curr
                 allowed_members=work_members.get(candidate.work_id, []),
             )
         if (match.status != "matched" and not linked) or not candidate:
-            reason = reason or match.message
+            reason = reason or request_reason or match.message
         elif candidate.work_id not in works:
             release_rejection = True
             reason = "Additional collection titles need an authorized acquisition scope"

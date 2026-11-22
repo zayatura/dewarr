@@ -74,6 +74,31 @@ class DownloadContext(BaseModel):
     message: str
     can_retry: bool = False
     file_conflicts: list[str] = Field(default_factory=list)
+    # How the request, the release listing and the files compare, for the review page.
+    mismatches: list["RequestMismatch"] = Field(default_factory=list)
+    expected_language: str | None = None
+    expected_language_source: Literal["request", "book", "settings"] | None = None
+    release: "ReleaseListing | None" = None
+
+
+class RequestMismatch(BaseModel):
+    field: Literal[
+        "title", "authors", "language", "identifiers", "release_title", "release_authors"
+    ]
+    message: str
+
+
+class ReleaseListing(BaseModel):
+    """What the source listed for the downloaded release."""
+
+    source: str
+    title: str
+    authors: list[str] = Field(default_factory=list)
+    narrators: list[str] = Field(default_factory=list)
+    language: str | None = None
+
+
+DownloadContext.model_rebuild()
 
 
 class InspectionView(BaseModel):
@@ -291,20 +316,115 @@ async def inspection(inspection_id: UUID, admin: Admin, db: Database):
             and not automatic.evidence.get("release_rejection")
             and not get_settings().recovery_mode
         ),
+        release=listing(selection.frozen.get("release") or {}),
     )
     if row.state == "ready" and row.snapshot and not plan:
+        from app.domain.catalog_language import language_name
         from app.importing.grouping import current_grouping
         from app.importing.linked_download import file_match
 
         _, grouping = await current_grouping(db, row)
+        matches = [await file_match(db, work, selection, row, group) for group in grouping.groups]
         value.download.file_conflicts = sorted(
-            {
-                conflict
-                for group in grouping.groups
-                for conflict in (await file_match(db, work, selection, row, group)).conflicts
-            }
+            {conflict for match in matches for conflict in match.conflicts}
         )
+        if len(matches) == 1:
+            value.download.mismatches = [
+                RequestMismatch.model_validate(item) for item in matches[0].mismatches
+            ]
+            value.download.expected_language = language_name(matches[0].language)
+            value.download.expected_language_source = (
+                matches[0].language_source if matches[0].language else None
+            )
     return value
+
+
+def listing(release):
+    from app.domain.catalog_language import language_name
+
+    if not release.get("title"):
+        return None
+    return ReleaseListing(
+        source=release.get("source") or "",
+        title=release["title"],
+        authors=release.get("authors") or [],
+        narrators=release.get("narrators") or [],
+        language=language_name(release.get("language")),
+    )
+
+
+REJECTIONS = {
+    "wrong-book": "Wrong book",
+    "wrong-language": "Wrong language",
+    "wrong-narrator": "Wrong narrator",
+    "incomplete": "Incomplete content",
+    "bad-audio": "Bad audio",
+}
+
+
+class RejectInput(StrictModel):
+    reason: Literal["wrong-book", "wrong-language", "wrong-narrator", "incomplete", "bad-audio"]
+
+
+class RejectionView(BaseModel):
+    work_id: UUID
+    message: str
+
+
+@router.post("/inspections/{inspection_id}/reject", response_model=RejectionView, status_code=202)
+async def reject_download(inspection_id: UUID, body: RejectInput, admin: Admin, db: Database):
+    """Block a held release for its requests and search again; the files stay put."""
+    from app.db.models import AuditEvent
+    from app.domain import download_recovery as recovery
+    from app.domain.download_attempts import locked
+    from app.domain.download_reviews import has_imports
+
+    if get_settings().recovery_mode:
+        raise HTTPException(409, "Downloads are paused for recovery")
+    row = await owned_inspection(db, admin.id, inspection_id)
+    attempt_id = await db.scalar(
+        select(DownloadAttempt.id).where(DownloadAttempt.inspection_id == row.id)
+    )
+    if not attempt_id:
+        raise HTTPException(409, "This inspection is not linked to a completed download")
+    attempt, selection = await locked(db, attempt_id)
+    automatic = await db.scalar(
+        select(AutomaticImport).where(AutomaticImport.attempt_id == attempt.id).with_for_update()
+    )
+    if (
+        attempt.state != "complete"
+        or not automatic
+        or automatic.state != "held"
+        or automatic.import_run_id
+        or automatic.evidence.get("review_rejection")
+    ):
+        raise HTTPException(409, "This download is no longer waiting for review; refresh it")
+    if await has_imports(db, row.id):
+        raise HTTPException(409, "Files from this download are already being imported")
+    label = REJECTIONS[body.reason]
+    if not await recovery.failed(
+        db, attempt, "Rejected in download review: " + label, actor_id=admin.id
+    ):
+        raise HTTPException(409, "No active request remains for this download")
+    automatic.evidence = {
+        **automatic.evidence,
+        "release_rejection": True,
+        "review_rejection": {"reason": body.reason, "actor_id": str(admin.id)},
+    }
+    automatic.message = f"Rejected in download review ({label.lower()}); finding another release"
+    db.add(
+        AuditEvent(
+            actor_id=admin.id,
+            action="acquisition.download.review_rejected",
+            entity_id=attempt.id,
+            detail={"inspection_id": str(row.id), "reason": body.reason},
+        )
+    )
+    await db.commit()
+    # The inspection now belongs to a rejected release; its replacement continues the request.
+    return RejectionView(
+        work_id=UUID(selection.frozen["origin_work_id"]), message=automatic.message
+    )
 
 
 @router.post("/inspections/{inspection_id}/retry", response_model=InspectionView, status_code=202)

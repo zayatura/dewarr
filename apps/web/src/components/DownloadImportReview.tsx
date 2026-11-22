@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import { Check, CircleAlert, LoaderCircle } from "lucide-react";
+import { Ban, Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { api, result } from "../api/client";
 import type { components } from "../api/schema";
 import { Loading, Notice } from "../components";
@@ -13,6 +13,7 @@ import BookCover from "./BookCover";
 import BookDialog from "./BookDialog";
 
 type Inspection = components["schemas"]["InspectionView"];
+type Rejection = components["schemas"]["RejectionView"];
 
 export default function DownloadImportReview({
   inspection,
@@ -25,6 +26,8 @@ export default function DownloadImportReview({
   const title = split ? download.title.slice(0, colon) : download.title;
   const subtitle = split ? download.title.slice(colon + 2) : null;
   const [showFiles, setShowFiles] = useState(false);
+  // A rejected release's inspection closes; its replacement continues the request.
+  const [rejection, setRejection] = useState<Rejection | null>(null);
   const cache = useQueryClient();
   const plan = useQuery({
     queryKey: ["frozen-import-plan", inspection.plan_id],
@@ -52,9 +55,10 @@ export default function DownloadImportReview({
     },
   });
   const done = download.state === "complete";
+  const finished = done || !!rejection;
   const queue = useQuery({
     queryKey: ["requests", "next-review", inspection.id],
-    enabled: done,
+    enabled: finished,
     queryFn: async ({ signal }) =>
       result(
         await api.GET("/api/requests", {
@@ -103,10 +107,12 @@ export default function DownloadImportReview({
       </header>
       <div className="download-review-status">
         <span
-          className={`download-import-state ${done ? "is-complete" : blocked ? "is-held" : "is-active"}`}
+          className={`download-import-state ${done ? "is-complete" : blocked || rejection ? "is-held" : "is-active"}`}
         >
           {done ? (
             <Check size={16} />
+          ) : rejection ? (
+            <Ban size={16} />
           ) : blocked ? (
             <CircleAlert size={16} />
           ) : (
@@ -114,9 +120,11 @@ export default function DownloadImportReview({
           )}
           {done
             ? "In library"
-            : blocked
-              ? "Needs attention"
-              : "Adding to library"}
+            : rejection
+              ? "Rejected"
+              : blocked
+                ? "Needs attention"
+                : "Adding to library"}
         </span>
         <span className="muted">
           Download complete
@@ -131,11 +139,26 @@ export default function DownloadImportReview({
           View files
         </button>
       </div>
-      {needsDecision ? (
+      {rejection ? (
+        <div className="download-attention">
+          <h3>Looking for another release</h3>
+          <p role="status">
+            Dewarr blocked this release for the request and is searching for
+            another one with the same requirements. The rejected files stay in
+            the download folder.
+          </p>
+          <p className="download-links">
+            <ContextLink to={`/books/${rejection.work_id}`}>
+              Follow the request on the book page
+            </ContextLink>
+          </p>
+        </div>
+      ) : needsDecision ? (
         <DownloadMatchReview
           inspection={inspection}
           retry={() => retry.mutate()}
           retrying={retry.isPending}
+          rejected={setRejection}
         />
       ) : plan.data ? (
         <ImportExecution plan={plan.data} compact />
@@ -164,7 +187,7 @@ export default function DownloadImportReview({
       ) : (
         <Loading />
       )}
-      {done && (
+      {finished && (
         <div className="download-review-next">
           {nextInspection ? (
             <Link
@@ -220,7 +243,7 @@ export default function DownloadImportReview({
                     file.path,
                   )
                     ? file.state === "inspected"
-                      ? "Readable · completeness still requires verification"
+                      ? "Readable"
                       : "Needs attention"
                     : "Extra file"}
                 </small>

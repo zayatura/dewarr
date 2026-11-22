@@ -13497,6 +13497,60 @@
         }
       }
     },
+    "/api/organization/inspections/{inspection_id}/reject": {
+      "post": {
+        "tags": [
+          "organization"
+        ],
+        "summary": "Reject Download",
+        "description": "Block a held release for its requests and search again; the files stay put.",
+        "operationId": "reject_download_api_organization_inspections__inspection_id__reject_post",
+        "parameters": [
+          {
+            "name": "inspection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Inspection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RejectionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/organization/inspections/{inspection_id}/retry": {
       "post": {
         "tags": [
@@ -25045,6 +25099,50 @@
             },
             "type": "array",
             "title": "File Conflicts"
+          },
+          "mismatches": {
+            "items": {
+              "$ref": "#/components/schemas/RequestMismatch"
+            },
+            "type": "array",
+            "title": "Mismatches"
+          },
+          "expected_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Language"
+          },
+          "expected_language_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "book",
+                  "settings"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Language Source"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseListing"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -36735,6 +36833,46 @@
         ],
         "title": "RecoveryView"
       },
+      "RejectInput": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "wrong-book",
+              "wrong-language",
+              "wrong-narrator",
+              "incomplete",
+              "bad-audio"
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RejectInput"
+      },
+      "RejectionView": {
+        "properties": {
+          "work_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Work Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "work_id",
+          "message"
+        ],
+        "title": "RejectionView"
+      },
       "ReleaseAssessment": {
         "properties": {
           "identity": {
@@ -36986,6 +37124,50 @@
           "basis"
         ],
         "title": "ReleaseEntry"
+      },
+      "ReleaseListing": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Authors"
+          },
+          "narrators": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Narrators"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "title"
+        ],
+        "title": "ReleaseListing",
+        "description": "What the source listed for the downloaded release."
       },
       "ReleaseMonth": {
         "properties": {
@@ -37639,6 +37821,32 @@
           "specification"
         ],
         "title": "RequestInput"
+      },
+      "RequestMismatch": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "title",
+              "authors",
+              "language",
+              "identifiers",
+              "release_title",
+              "release_authors"
+            ],
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "message"
+        ],
+        "title": "RequestMismatch"
       },
       "RequestOptions": {
         "properties": {

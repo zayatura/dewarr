@@ -47,11 +47,42 @@ LANGUAGE_ALIASES = {
     "kor": "ko",
 }
 
+# Audio tags often name the language in that language ("Deutsch"). Kept apart from
+# LANGUAGE_ALIASES, which also reads release titles, where these words can be titles.
+NATIVE_LANGUAGE_NAMES = {
+    "deutsch": "de",
+    "français": "fr",
+    "francais": "fr",
+    "español": "es",
+    "espanol": "es",
+    "italiano": "it",
+    "português": "pt",
+    "portugues": "pt",
+    "nederlands": "nl",
+    "svenska": "sv",
+    "dansk": "da",
+    "norsk": "no",
+    "suomi": "fi",
+    "polski": "pl",
+    "русский": "ru",
+    "日本語": "ja",
+    "中文": "zh",
+    "한국어": "ko",
+}
+
+LANGUAGE_NAMES = {code: name.title() for name, code in LANGUAGE_ALIASES.items() if len(name) > 3}
+
+
+def language_name(value):
+    """A readable name for a language code or label, e.g. "de" -> "German"."""
+    key = catalog_language(value)
+    return LANGUAGE_NAMES.get(key or "", (value or "").strip()) or None
+
 
 def catalog_language(value):
     value = " ".join((value or "").lower().split()).replace("_", "-")
     parts = value.split("-")
-    base = LANGUAGE_ALIASES.get(parts[0], parts[0])
+    base = LANGUAGE_ALIASES.get(parts[0]) or NATIVE_LANGUAGE_NAMES.get(parts[0], parts[0])
     # Script variants can be different readable editions, even within one language.
     if len(parts) > 1 and re.fullmatch(r"[a-z]{4}", parts[1]):
         return base + "-" + parts[1]
@@ -64,6 +95,6 @@ def catalog_language_sql(value):
         "",
     )
     base = func.split_part(value, "-", 1)
-    base = case(LANGUAGE_ALIASES, value=base, else_=base)
+    base = case({**NATIVE_LANGUAGE_NAMES, **LANGUAGE_ALIASES}, value=base, else_=base)
     script = func.split_part(value, "-", 2)
     return case((script.op("~")(r"^[a-z]{4}$"), base + "-" + script), else_=base)

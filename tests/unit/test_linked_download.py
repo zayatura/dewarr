@@ -339,3 +339,43 @@ async def test_reviewed_collection_mapping_requires_independent_file_identity(mo
     )
     assert result is (version if case == "corroborated" else None)
     assert attach.await_count == (1 if case == "corroborated" else 0)
+
+
+def test_author_punctuation_does_not_hold_a_matching_download():
+    work = SimpleNamespace(
+        title="Harbor Lights", authors=["Author A. Example"], language=None, metadata_fields={}
+    )
+    release = {"source": "mam", "title": "Harbor Lights", "authors": ["Author A Example"]}
+    facts = MatchEvidence(titles=["harbor lights"], authors=[["author a. example"]])
+    assert agrees_with_request(work, release, facts, language="en")
+
+
+def test_request_language_holds_files_in_another_language():
+    from app.importing.linked_download import request_mismatches
+    from app.importing.match_evidence import language_key
+
+    work = SimpleNamespace(
+        title="Harbor Lights", authors=["Author A"], language=None, metadata_fields={}
+    )
+    release = {"source": "mam", "title": "Harbor Lights", "authors": ["Author A"]}
+    facts = MatchEvidence(
+        titles=["harbor lights"], authors=[["author a"]], languages=[language_key("Deutsch")]
+    )
+    assert request_mismatches(work, release, facts, language="en") == [
+        {
+            "field": "language",
+            "message": "The files are in German, but this request expects English",
+        }
+    ]
+    # Without an expected language, or with an unrecognized tag, language stays neutral.
+    assert agrees_with_request(work, release, facts)
+    unknown = facts.model_copy(update={"languages": ["english (us)"]})
+    assert agrees_with_request(work, release, unknown, language="en")
+    # Untagged files fall back to the language the source listed.
+    listed = {**release, "language": "GER"}
+    assert (
+        request_mismatches(work, listed, MatchEvidence(titles=["harbor lights"]), language="en")[0][
+            "message"
+        ]
+        == "The release is in German, but this request expects English"
+    )

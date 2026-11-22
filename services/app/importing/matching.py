@@ -287,7 +287,10 @@ async def match_group(db, snapshot, grouping_revision, group, *, inspection=None
         message = "; ".join(identified[0].conflicts)
     elif candidates:
         message = (
-            "Possible catalog matches need review; title similarity is not an edition identifier"
+            "No catalog edition has the files' ISBN or ASIN, and a matching title "
+            "cannot confirm the edition"
+            if facts.identifiers
+            else "The files have no ISBN or ASIN, and a matching title cannot confirm the edition"
         )
     else:
         message = (

@@ -17,9 +17,9 @@ Catalog matching, release assessment and import matching now share title compati
 
 Minor differences between two long descriptive subtitles require a shared edition identifier and agreement from the surrounding identity checks. Both subtitles must contain at least eight words, have at least 80% token overlap and at least 92% character similarity. Changes to numbers, negation or edition qualifiers are rejected. Author, language, edition constraints, explicit rejections and ambiguous identifiers still require their existing checks.
 
-Matching revisions include the new rules so cached failures can be reconsidered. Library matches are reconsidered on the next eligible sync; held imports can use **Check again automatically**.
+Matching revisions include the new rules so cached failures can be reconsidered. Library matches are reconsidered on the next eligible sync; held imports can use **Check again**.
 
-For a single completed download, the saved request and agreeing release metadata may identify otherwise untagged files. Prowlarr releases may supply an exact author/title pair in their name. A series-only embedded title also needs agreeing authors, a complete single-book download, and fresh, unique catalog series membership at the same position. Conflicting file metadata and requests for a specific edition retain stricter review.
+For a single completed download, the saved request and agreeing release metadata may identify otherwise untagged files. Author credits compare without punctuation, so "Author A Example" agrees with "Author A. Example". The files' language tag (or, without one, the language the source listed) must match the request's language. When the request names none, the book's catalog language applies, and then the **Primary language** in Settings → Metadata. Unrecognized language labels are ignored rather than held. Prowlarr releases may supply an exact author/title pair in their name. A series-only embedded title also needs agreeing authors, a complete single-book download, and fresh, unique catalog series membership at the same position. Conflicting file metadata and requests for a specific edition retain stricter review.
 
 Release names may place a known series and its position before or after the complete book title. Positions can use digits or canonical Roman numerals, but must agree with the catalog. For example, `Dark Tower II: The Drawing of the Three - Stephen King` can identify that book at position 2. Dotted year, retail, ebook-format and release-group suffixes can follow an exact author/title pair. These labels do not replace inspection of the downloaded files or establish their medium or completeness.
 
@@ -31,7 +31,15 @@ A linked download keeps the book chosen during discovery and its saved library d
 
 Missing embedded titles or authors do not invalidate a unique edition identifier belonging to the requested book when the saved release also agrees. Another work, conflicting tags, ambiguous identifiers, metadata disputes and specific-edition requirements still block that fallback. The saved request and release evidence are recorded with the automatic import.
 
-Successful automatic imports require no review. A held download can continue automatically with its existing association. When completeness cannot be established, the reviewer confirms the files contain the complete book and adds it to the library; no book or edition picker is shown. Incorrect or ambiguous downloads link to the existing source search for that same book. Correcting catalog metadata uses the existing book metadata page and its Hardcover search.
+Successful automatic imports require no review. A held download states what disagrees with the request in plain words, for example "The files are in German, but this request expects English". A table compares the request, the release as the source listed it, and the files' own tags (title, author, narrator, language, length, ISBN/ASIN), marking the cells that differ.
+
+The reviewer then chooses one of these:
+
+- **Add to library**: imports the files with the existing association. A download with several media files also asks for confirmation that no part is missing. Dewarr can read every file but cannot tell whether a chapter is absent.
+- **Wrong book, find another**: blocks the release for the request and searches for a replacement with the same requirements, as a reported problem does. The files stay in the download folder, so seeding continues, and the request leaves Download review.
+- **Check again**: reruns the automatic checks, for example after correcting the book's catalog details.
+
+No book or edition picker is shown. Downloads with structural problems (several books, unreadable files, ambiguous identifiers) cannot be added from this page. They can be rejected, or the reviewer can choose a release from the same book's source search. Correcting catalog metadata uses the existing book metadata page and its Hardcover search.
 
 Downloaded filenames are optional in a small dialog. Naming templates, hashes, grouping identifiers, inspection dumps and the generic catalog picker are absent from linked-download review. The standalone local-folder import tool remains separate. Import retries preserve their frozen plan and request key, and library confirmation is still required before a request becomes satisfied.
 

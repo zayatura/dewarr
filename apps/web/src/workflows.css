@@ -699,3 +699,9 @@
     min-width: 44px;
   }
 }
+
+/* A tertiary action beside the review buttons; the shared controls make text buttons bold. */
+.download-attention .actions .text-button {
+  font-size: 13px;
+  font-weight: 500;
+}

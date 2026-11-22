@@ -4047,6 +4047,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/organization/inspections/{inspection_id}/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reject Download
+     * @description Block a held release for its requests and search again; the files stay put.
+     */
+    post: operations["reject_download_api_organization_inspections__inspection_id__reject_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/organization/inspections/{inspection_id}/retry": {
     parameters: {
       query?: never;
@@ -8207,6 +8227,13 @@ export interface components {
       can_retry: boolean;
       /** File Conflicts */
       file_conflicts?: string[];
+      /** Mismatches */
+      mismatches?: components["schemas"]["RequestMismatch"][];
+      /** Expected Language */
+      expected_language?: string | null;
+      /** Expected Language Source */
+      expected_language_source?: ("request" | "book" | "settings") | null;
+      release?: components["schemas"]["ReleaseListing"] | null;
     };
     /** DownloadFolderView */
     DownloadFolderView: {
@@ -12597,6 +12624,29 @@ export interface components {
       latest_inventory_reconciliation?:
         components["schemas"]["InventoryReconciliationView"] | null;
     };
+    /** RejectInput */
+    RejectInput: {
+      /**
+       * Reason
+       * @enum {string}
+       */
+      reason:
+        | "wrong-book"
+        | "wrong-language"
+        | "wrong-narrator"
+        | "incomplete"
+        | "bad-audio";
+    };
+    /** RejectionView */
+    RejectionView: {
+      /**
+       * Work Id
+       * Format: uuid
+       */
+      work_id: string;
+      /** Message */
+      message: string;
+    };
     /** ReleaseAssessment */
     ReleaseAssessment: {
       /**
@@ -12693,6 +12743,22 @@ export interface components {
       genres?: string[];
       /** State */
       state?: string | null;
+    };
+    /**
+     * ReleaseListing
+     * @description What the source listed for the downloaded release.
+     */
+    ReleaseListing: {
+      /** Source */
+      source: string;
+      /** Title */
+      title: string;
+      /** Authors */
+      authors?: string[];
+      /** Narrators */
+      narrators?: string[];
+      /** Language */
+      language?: string | null;
     };
     /** ReleaseMonth */
     ReleaseMonth: {
@@ -12965,6 +13031,22 @@ export interface components {
       release_preferences?: components["schemas"]["PreferenceChoice"] | null;
       /** Expected Preference Revision */
       expected_preference_revision?: string | null;
+    };
+    /** RequestMismatch */
+    RequestMismatch: {
+      /**
+       * Field
+       * @enum {string}
+       */
+      field:
+        | "title"
+        | "authors"
+        | "language"
+        | "identifiers"
+        | "release_title"
+        | "release_authors";
+      /** Message */
+      message: string;
     };
     /**
      * RequestOptions
@@ -23612,6 +23694,41 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["InspectionView"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  reject_download_api_organization_inspections__inspection_id__reject_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        inspection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RejectInput"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RejectionView"];
         };
       };
       /** @description Validation Error */

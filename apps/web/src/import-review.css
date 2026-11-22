@@ -317,3 +317,99 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+/* Request, release listing and files side by side; disagreements are marked. */
+.download-comparison {
+  width: 100%;
+  margin: 4px 0 24px;
+  border-collapse: collapse;
+  font-size: 14px;
+  table-layout: fixed;
+}
+.download-comparison th,
+.download-comparison td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.download-comparison thead th {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.download-comparison thead td,
+.download-comparison tbody th {
+  width: 7.5rem;
+}
+.download-comparison tbody th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.download-comparison td.is-mismatch {
+  color: #e4ba73;
+  background: #e4ba7314;
+  box-shadow: inset 2px 0 #e4ba73;
+}
+.download-reject {
+  display: grid;
+  gap: 16px;
+  max-width: 60ch;
+}
+.download-reject p {
+  margin: 0;
+}
+.download-reject .actions {
+  margin-top: 0;
+}
+.download-attention p.download-handling {
+  margin: 16px 0 0;
+  font-size: 13px;
+}
+.download-attention .download-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 16px 0 0;
+  font-size: 14px;
+}
+.download-links a {
+  color: var(--accent);
+}
+@media (max-width: 700px) {
+  /* Stack each row: its label, then the three sources with their own labels. */
+  .download-comparison,
+  .download-comparison tbody,
+  .download-comparison tr,
+  .download-comparison th,
+  .download-comparison td {
+    display: block;
+    width: auto;
+  }
+  .download-comparison thead {
+    display: none;
+  }
+  .download-comparison tr {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .download-comparison th,
+  .download-comparison td {
+    padding: 4px 8px;
+    border: 0;
+  }
+  .download-comparison tbody th {
+    width: auto;
+    font-size: 12px;
+  }
+  .download-comparison td.is-empty {
+    display: none;
+  }
+  .download-comparison td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+  }
+}
