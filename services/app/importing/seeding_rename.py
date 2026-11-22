@@ -28,7 +28,7 @@ from app.db.session import session_factory
 from app.domain.download_attempts import attempt_tag
 from app.domain.download_repairs import accepted_configuration
 from app.domain.downloaders import mappings_current, relative_to
-from app.importing.filesystem import InspectionError, beneath, digest, directory
+from app.importing.filesystem import InspectionError, beneath, digest, directory, list_entries
 from app.importing.naming import AUDIO, EBOOK, fingerprint
 from app.importing.publication import (
     PublicationError,
@@ -236,7 +236,7 @@ def plan_renames(state, spec, mappings, client_root: str) -> dict:
 
 def tree_names(folder) -> list[str]:
     found = []
-    for name in os.listdir(folder):
+    for name in list_entries(folder):
         try:
             child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=folder)
         except NotADirectoryError:
@@ -263,7 +263,7 @@ def assert_destination_available(spec, incidentals):
     with directory(spec.destination_root) as root:
         try:
             with beneath(root, spec.folder, folder=True) as leaf:
-                names = set(os.listdir(leaf))
+                names = set(list_entries(leaf))
                 foreign = set()
                 if ".torrent" in names:
                     with beneath(leaf, ".torrent", folder=True) as extras:
@@ -284,7 +284,7 @@ def assert_existing_library_file(spec, state, plan):
     with directory(spec.destination_root) as root:
         try:
             with beneath(root, spec.folder, folder=True) as leaf:
-                present = set(os.listdir(leaf))
+                present = set(list_entries(leaf))
                 for file in spec.files:
                     if file.name not in present:
                         continue

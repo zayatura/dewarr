@@ -30,7 +30,9 @@ from app.importing.filesystem import (
     directory,
     enumerate_files,
     identity,
+    list_entries,
     relative_parts,
+    scan_entries,
     source_scope,
 )
 from app.importing.layout import ROOT_MARKER, library_relative, overlaps, unsafe_roots
@@ -517,7 +519,7 @@ def secure_managed_directory(fd, path):
         return
     # Existing receipts may have been writable by somebody else. Changing their
     # parent mode cannot make those receipts trustworthy again.
-    with os.scandir(fd) as entries:
+    with scan_entries(fd) as entries:
         empty = next(entries, None) is None
     if info.st_uid != os.geteuid() or not empty:
         raise PublicationError(
@@ -731,7 +733,7 @@ def conversion_inputs(spec):
 
 
 def leaf_names(folder, spec):
-    present = set(os.listdir(folder))
+    present = set(list_entries(folder))
     if spec.mode == "rename":
         present.discard(".torrent")
     return present
@@ -775,7 +777,7 @@ def verify_item(folder, spec, deadline, derived=None, receipt=None):
 
 def conflicting_name(fd, name):
     key = collision_key(name)
-    return next((existing for existing in os.listdir(fd) if collision_key(existing) == key), None)
+    return next((existing for existing in list_entries(fd) if collision_key(existing) == key), None)
 
 
 @contextmanager
@@ -796,7 +798,7 @@ def destination_parent(root, relative):
             os.close(fd)
             fd = child
             # Structural ancestors may not contain files that ABS could absorb into a book.
-            with os.scandir(fd) as entries:
+            with scan_entries(fd) as entries:
                 if any(not entry.is_dir(follow_symlinks=False) for entry in entries):
                     raise PublicationError("A structural destination folder already contains files")
         yield fd, parts[-1]
@@ -1652,7 +1654,7 @@ def probe_download_folder(
         root = stack.enter_context(directory(source_root))
         source = stack.enter_context(beneath(root, relative, folder=True)) if relative else root
         with probe_step("reading the download folder", path, "download"):
-            with os.scandir(source) as entries:
+            with scan_entries(source) as entries:
                 next(entries, None)
         sample = None
         try:
@@ -1730,7 +1732,7 @@ def probe_destination(
                 with beneath(source, file.source) as fd:
                     os.read(fd, 1)
             else:
-                with os.scandir(source) as entries:
+                with scan_entries(source) as entries:
                     next(entries, None)
                 report.update(
                     source_readable=True,

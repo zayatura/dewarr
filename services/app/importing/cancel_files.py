@@ -4,7 +4,7 @@ import os
 from contextlib import ExitStack, nullcontext
 from uuid import uuid4
 
-from app.importing.filesystem import beneath, directory
+from app.importing.filesystem import beneath, directory, list_entries
 from app.importing.publication import (
     PUBLICATION_MARKER,
     PublicationError,
@@ -39,7 +39,7 @@ def remove_stage(staging, receipt, spec, checkpoint):
         known = published_names(spec) | set(generated_files(spec))
         if receipt.get("publication_marker"):
             known.add(PUBLICATION_MARKER)
-        names = os.listdir(folder)
+        names = list_entries(folder)
         if set(names) - known:
             raise PublicationError("Unrecognized staged files need review before cancellation")
         identities = {}
@@ -77,7 +77,7 @@ def cancel_renamed(root, staging, name, receipt, spec):
     """Never delete a seeding file that qBittorrent already moved into the library."""
     try:
         with beneath(root, spec.folder, folder=True) as item:
-            names = set(os.listdir(item))
+            names = set(list_entries(item))
             media = {file.name for file in spec.files}
             allowed = media | set(generated_files(spec)) | {".torrent"}
             # An empty folder, or only the parked torrent directory, is not the book.
@@ -118,7 +118,7 @@ def cancel_files(spec, *, guard=nullcontext, checkpoint=lambda _: None):
             if receipt is None:
                 try:
                     with beneath(root, spec.folder, folder=True) as item:
-                        names = set(os.listdir(item))
+                        names = set(list_entries(item))
                         # A leftover empty book folder is not a published copy.
                         if spec.mode != "rename" or names - {".torrent"}:
                             raise PublicationError(

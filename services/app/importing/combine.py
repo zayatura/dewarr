@@ -39,7 +39,14 @@ from app.db.models import (
 )
 from app.db.session import session_factory
 from app.domain.catalog_titles import parse_title_labels
-from app.importing.filesystem import beneath, directory, enumerate_files, identity, relative_parts
+from app.importing.filesystem import (
+    beneath,
+    directory,
+    enumerate_files,
+    identity,
+    list_entries,
+    relative_parts,
+)
 from app.importing.layout import library_relative, overlaps, unsafe_staging
 from app.importing.naming import AUDIO, StrictModel, collision_key, fingerprint
 from app.importing.publication import (
@@ -289,7 +296,7 @@ def remove_tree(parent, name):
         raise CombineError("Unexpected entry in the combine staging folder")
     fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
     try:
-        for entry in os.listdir(fd):
+        for entry in list_entries(fd):
             child = lstat(fd, entry)
             if child and stat.S_ISDIR(child.st_mode):
                 remove_tree(fd, entry)

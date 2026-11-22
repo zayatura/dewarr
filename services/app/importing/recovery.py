@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from app.domain.recovery_scans import ScanHeld, digest
-from app.importing.filesystem import beneath, directory, identity, source_scope
+from app.importing.filesystem import beneath, directory, identity, scan_entries, source_scope
 from app.importing.publication import (
     PublicationSpec,
     checked_source,
@@ -229,7 +229,7 @@ def journal_census(path, journal_root=None):
         control = journal_fd(root)
         before = {fd: identity(os.fstat(fd)) for fd in {int(root), control}}
         for fd in before:
-            with os.scandir(fd) as entries:
+            with scan_entries(fd) as entries:
                 for entry in entries:
                     if time.monotonic() > deadline:
                         raise ScanHeld("Journal census exceeded its read deadline")

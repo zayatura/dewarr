@@ -18,7 +18,7 @@ from app.db.session import session_factory
 from app.domain.downloaders import TRANSFER_KINDS, mapped_path
 from app.domain.operations import transaction_lock
 from app.importing.backend import verify_backend
-from app.importing.filesystem import InspectionError, describe_os_error, directory
+from app.importing.filesystem import InspectionError, describe_os_error, directory, scan_entries
 from app.importing.layout import STAGING_NAME, overlaps, unsafe_staging
 from app.importing.naming import fingerprint
 from app.importing.publication import (
@@ -486,7 +486,7 @@ def choose_staging(
 def holds_journals(staging: Path) -> bool:
     """Whether a staging folder still holds publication receipts that recovery reads."""
     try:
-        with directory(staging) as fd, os.scandir(fd) as entries:
+        with directory(staging) as fd, scan_entries(fd) as entries:
             return any(entry.name.endswith(".json") for entry in entries)
     except (OSError, InspectionError):
         return False

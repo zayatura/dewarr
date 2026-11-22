@@ -133,6 +133,24 @@ def digest(fd, deadline):
     return result.hexdigest()
 
 
+def list_entries(target):
+    """os.listdir that also sees entries created through an open directory handle.
+
+    Through a handle, btrfs lists only the entries present when it was opened or last
+    rewound, and CPython rewinds only after reading. Rewind first; paths are unchanged.
+    """
+    if isinstance(target, int):
+        os.lseek(target, 0, os.SEEK_SET)
+    return os.listdir(target)
+
+
+def scan_entries(target):
+    """os.scandir with the same rewind as list_entries."""
+    if isinstance(target, int):
+        os.lseek(target, 0, os.SEEK_SET)
+    return os.scandir(target)
+
+
 def enumerate_files(root, *, max_entries=10000, max_depth=20):
     files = []
     visited = 0
@@ -142,7 +160,7 @@ def enumerate_files(root, *, max_entries=10000, max_depth=20):
         if depth > max_depth:
             raise InspectionError("Download directory exceeds the supported depth")
         before = identity(os.fstat(fd))
-        with os.scandir(fd) as entries:
+        with scan_entries(fd) as entries:
             for entry in entries:
                 visited += 1
                 if visited > max_entries:

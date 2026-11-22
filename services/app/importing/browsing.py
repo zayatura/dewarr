@@ -1,11 +1,10 @@
 """Bounded, descriptor-relative browsing of configured read-only download roots."""
 
-import os
 import stat
 from contextlib import nullcontext
 from pathlib import Path
 
-from app.importing.filesystem import beneath, directory
+from app.importing.filesystem import beneath, directory, scan_entries
 
 
 def browse_downloads(root: Path, path: str = "", *, limit: int = 500):
@@ -13,7 +12,7 @@ def browse_downloads(root: Path, path: str = "", *, limit: int = 500):
     truncated = False
     with directory(root) as root_fd:
         with beneath(root_fd, path, folder=True) if path else nullcontext(root_fd) as fd:
-            with os.scandir(fd) as listing:
+            with scan_entries(fd) as listing:
                 for index, entry in enumerate(listing):
                     if index >= limit:
                         truncated = True
