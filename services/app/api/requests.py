@@ -270,6 +270,21 @@ def approval_of(reasons) -> str:
 
 
 _LIVE_DOWNLOADS = ("queued", "preflight", "submitting", "uncertain", "downloading", "held")
+# A rejected or replaced transfer stays "held" as a record. Once its replacement is
+# settled (done, handed to a new transfer, or stopped), it no longer counts as live.
+_SETTLED_RECOVERY = ("complete", "retried", "held")
+
+
+def _live_transfer():
+    return and_(
+        DownloadAttempt.state.in_(_LIVE_DOWNLOADS),
+        ~exists().where(
+            DownloadRecovery.attempt_id == DownloadAttempt.id,
+            DownloadRecovery.state.in_(_SETTLED_RECOVERY),
+        ),
+    )
+
+
 RequestStatus = Literal["pending", "downloading", "library", "declined", "withdrawn", "review"]
 
 
@@ -464,7 +479,7 @@ def _status_filters(status: RequestStatus):
     if status == "downloading":
         return [
             or_(
-                _attempt_exists(DownloadAttempt.state.in_(_LIVE_DOWNLOADS)),
+                _attempt_exists(_live_transfer()),
                 _attempt_exists(DownloadAttempt.state == "complete", wanted_target=True),
                 _committed_selection(),
             )
@@ -1298,7 +1313,7 @@ async def request_counts(user: CurrentUser, db: Database):
         ~pending,
         ~partial,
         or_(
-            _attempt_exists(DownloadAttempt.state.in_(_LIVE_DOWNLOADS)),
+            _attempt_exists(_live_transfer()),
             _attempt_exists(
                 DownloadAttempt.state == "complete", ~_review_clause(), wanted_target=True
             ),

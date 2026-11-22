@@ -588,6 +588,13 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             )
             assert target["import_state"] is None and not target["needs_review"]
             assert target["attempt_message"] is None and target["progress"] is None
+            assert (await reviewer.get("/api/requests/counts")).json()["downloading"] == 1
+            # A replacement that stopped leaves the rejected transfer as a record only.
+            async with database() as db, db.begin():
+                (await db.scalar(select(DownloadRecovery))).state = "held"
+            assert (await reviewer.get("/api/requests/counts")).json()["downloading"] == 0
+            moving = (await reviewer.get("/api/requests?status=downloading")).json()
+            assert moving["items"] == []
             assert (
                 await reviewer.post(endpoint + "/reject", json={"reason": "wrong-book"})
             ).status_code == 409
