@@ -410,3 +410,23 @@ def test_hungarian_files_satisfy_a_hungarian_request_and_hold_an_english_one():
             "message": "The files are in Hungarian, but this request expects English",
         }
     ]
+
+
+@pytest.mark.parametrize(("position", "agrees"), [("6", True), ("5", False), (None, False)])
+def test_release_subtitle_at_the_books_series_position_does_not_hold_the_import(position, agrees):
+    work = SimpleNamespace(
+        title="Harbor Lights", authors=["Author A"], language=None, metadata_fields={}
+    )
+    release = {
+        "source": "mam",
+        "title": "Harbor Lights: The Harbor Cycle, Part One",
+        "authors": ["Author A"],
+        "series": [{"name": "Coast", "position": position, "source_id": "1"}] if position else [],
+    }
+    facts = MatchEvidence(titles=["harbor lights"], authors=[["author a"]])
+    assert (
+        agrees_with_request(
+            work, release, facts, series=[{"name": "Coast", "position": "6"}], language="en"
+        )
+        is agrees
+    )

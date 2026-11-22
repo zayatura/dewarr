@@ -582,10 +582,20 @@ def series_position_agrees(release, work):
         for item in work.get("series") or []
         if position_key(item.get("position")) is not None
     }
+    # Saved selections keep the release as plain data; search results are models.
+    listed = (
+        release.get("series") if isinstance(release, dict) else getattr(release, "series", None)
+    )
+    pairs = [
+        (item.get("name"), item.get("position"))
+        if isinstance(item, dict)
+        else (item.name, item.position)
+        for item in listed or []
+    ]
     return any(
-        (series_name(item.name), position_key(item.position)) in catalog
-        for item in getattr(release, "series", None) or []
-        if position_key(item.position) is not None
+        (series_name(name), position_key(position)) in catalog
+        for name, position in pairs
+        if name and position_key(position) is not None
     )
 
 

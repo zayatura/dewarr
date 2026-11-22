@@ -11,7 +11,7 @@ from app.db.models import AcquisitionSelection, DownloadAttempt, Version
 from app.domain.book_sources import identity
 from app.domain.catalog_language import LANGUAGE_NAMES, language_name
 from app.domain.catalog_titles import credit_key, display_title
-from app.domain.release_profiles import indexer_title_authors
+from app.domain.release_profiles import indexer_title_authors, series_book_title
 from app.domain.series_identity import title_outside_series_note
 from app.domain.title_matching import compatible_title
 from app.domain.work_graph import canonical_work
@@ -133,7 +133,12 @@ def request_mismatches(work, release, facts, *, series=(), verified_titles=(), l
             )
         )
     )
-    if not compatible_title(shown, work.title) and not credited_release:
+    if (
+        not compatible_title(shown, work.title)
+        and not credited_release
+        # A source-only subtitle on a release at this book's own series position.
+        and not series_book_title(release.get("title", ""), release, catalog)
+    ):
         add("release_title", "The release has a different title")
     if facts.titles and not file_titles_agree:
         add("title", "The files name a different book")

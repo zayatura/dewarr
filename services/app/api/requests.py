@@ -671,7 +671,12 @@ async def _decorate_target(db, user, intent, target: TargetView, *, row) -> None
                 select(DownloadRecovery.id).where(DownloadRecovery.attempt_id == attempt.id)
             ):
                 target.needs_review = True
-                target.review_message = automatic.message
+                # Only administrators can decide; tell everyone else who will.
+                target.review_message = (
+                    automatic.message
+                    if user.role == "admin"
+                    else f"{automatic.message}. An administrator will check this download."
+                )
             elif automatic.import_run_id and automatic.evidence.get("held_groups"):
                 selected = await db.get(AcquisitionSelection, selection_id)
                 planned = await db.scalar(

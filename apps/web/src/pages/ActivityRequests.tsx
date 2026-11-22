@@ -106,8 +106,12 @@ function targetNotes(label: string, target: Target) {
     "Waiting for approval",
     "Acquisition pending; check download activity",
   ]);
+  // A review message may extend the status message; show the fuller one only.
+  const message = target.review_message?.startsWith(target.message || "\0")
+    ? null
+    : target.message;
   const parts = [
-    target.message,
+    message,
     target.attempt_message,
     target.repair_message,
     target.review_message,
