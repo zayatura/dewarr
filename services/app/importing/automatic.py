@@ -487,7 +487,14 @@ async def plan_ready(db, row, selection, inspection, approver, destination, curr
             from app.importing.matching import candidate_evidence
 
             linked = await linked_version(
-                db, approver, selection, inspection, group, grouping_revision, match=match
+                db,
+                approver,
+                selection,
+                inspection,
+                group,
+                grouping_revision,
+                match=match,
+                confirmed=(row.evidence.get("requester_confirmation") or {}).get("mismatches"),
             )
             if linked:
                 work = await canonical_work(db, linked.work_id)

@@ -12807,6 +12807,60 @@
         }
       }
     },
+    "/api/acquisition/downloads/{attempt_id}/review/accept": {
+      "post": {
+        "tags": [
+          "downloads"
+        ],
+        "summary": "Accept Own Review",
+        "description": "The requester confirms these files are the book they asked for.",
+        "operationId": "accept_own_review_api_acquisition_downloads__attempt_id__review_accept_post",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attempt Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnReviewView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/acquisition/recovery/approvals": {
       "get": {
         "tags": [
@@ -18599,6 +18653,21 @@
           "base_url"
         ],
         "title": "ABSConnectionInput"
+      },
+      "AcceptInput": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Confirmation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation"
+        ],
+        "title": "AcceptInput"
       },
       "AccessCatalog": {
         "properties": {
@@ -28020,6 +28089,24 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "Identifier": {
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "namespace",
+          "value"
+        ],
+        "title": "Identifier"
+      },
       "IdentifierEvidence": {
         "properties": {
           "namespace": {
@@ -33149,6 +33236,97 @@
           "can_reject": {
             "type": "boolean",
             "title": "Can Reject"
+          },
+          "mismatches": {
+            "items": {
+              "$ref": "#/components/schemas/RequestMismatch"
+            },
+            "type": "array",
+            "title": "Mismatches"
+          },
+          "expected_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Language"
+          },
+          "expected_language_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Language Source"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseListing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "identifiers": {
+            "items": {
+              "$ref": "#/components/schemas/Identifier"
+            },
+            "type": "array",
+            "title": "Identifiers"
+          },
+          "library": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library"
+          },
+          "can_add": {
+            "type": "boolean",
+            "title": "Can Add",
+            "default": false
+          },
+          "add_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Add Unavailable"
+          },
+          "confirmation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation"
           }
         },
         "type": "object",
@@ -38433,6 +38611,40 @@
           "description"
         ],
         "title": "RequestView"
+      },
+      "ReviewFile": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "medium": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medium"
+          },
+          "technical": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Technical"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "ReviewFile"
       },
       "ReviewInput": {
         "properties": {

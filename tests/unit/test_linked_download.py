@@ -430,3 +430,36 @@ def test_release_subtitle_at_the_books_series_position_does_not_hold_the_import(
         )
         is agrees
     )
+
+
+def test_requesters_confirm_only_title_author_and_language_differences():
+    from app.importing.linked_download import RequestFileMatch, confirmable
+
+    def decision(*fields, conflicts=()):
+        return RequestFileMatch(
+            uuid4(),
+            (),
+            list(conflicts),
+            not fields,
+            tuple({"field": field, "message": f"{field} differs"} for field in fields),
+        )
+
+    assert confirmable(decision("language")) == confirmable(decision("language"))
+    assert confirmable(decision("language", "release_title"))
+    assert confirmable(decision("language")) != confirmable(decision("release_title"))
+    assert confirmable(decision()) is None
+    assert confirmable(decision("identifiers")) is None
+    assert (
+        confirmable(decision("language", conflicts=["The files use a different language"])) is None
+    )
+
+
+def test_resolving_own_reviews_keeps_the_member_label():
+    from app.domain import permissions
+
+    user = SimpleNamespace(active=True, role="member", can_automate=False)
+    user.permissions = permissions.MEMBER | permissions.REVIEW_OWN_DOWNLOADS
+    assert permissions.access_label(user) == "Member"
+    assert permissions.has(user, permissions.REVIEW_OWN_DOWNLOADS)
+    user.permissions = permissions.MEMBER
+    assert not permissions.has(user, permissions.REVIEW_OWN_DOWNLOADS)

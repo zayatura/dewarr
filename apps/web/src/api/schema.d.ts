@@ -3806,6 +3806,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/acquisition/downloads/{attempt_id}/review/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept Own Review
+     * @description The requester confirms these files are the book they asked for.
+     */
+    post: operations["accept_own_review_api_acquisition_downloads__attempt_id__review_accept_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/acquisition/recovery/approvals": {
     parameters: {
       query?: never;
@@ -5718,6 +5738,11 @@ export interface components {
        * @default true
        */
       enabled: boolean;
+    };
+    /** AcceptInput */
+    AcceptInput: {
+      /** Confirmation */
+      confirmation: string;
     };
     /** AccessCatalog */
     AccessCatalog: {
@@ -9276,6 +9301,13 @@ export interface components {
       /** Detail */
       detail?: components["schemas"]["ValidationError"][];
     };
+    /** Identifier */
+    Identifier: {
+      /** Namespace */
+      namespace: string;
+      /** Value */
+      value: string;
+    };
     /** IdentifierEvidence */
     IdentifierEvidence: {
       /** Namespace */
@@ -11273,6 +11305,28 @@ export interface components {
       message: string;
       /** Can Reject */
       can_reject: boolean;
+      /** Mismatches */
+      mismatches?: components["schemas"]["RequestMismatch"][];
+      /** Expected Language */
+      expected_language?: string | null;
+      /** Expected Language Source */
+      expected_language_source?: string | null;
+      release?: components["schemas"]["ReleaseListing"] | null;
+      /** Files */
+      files?: components["schemas"]["ReviewFile"][];
+      /** Identifiers */
+      identifiers?: components["schemas"]["Identifier"][];
+      /** Library */
+      library?: string | null;
+      /**
+       * Can Add
+       * @default false
+       */
+      can_add: boolean;
+      /** Add Unavailable */
+      add_unavailable?: string | null;
+      /** Confirmation */
+      confirmation?: string | null;
     };
     /** PackBook */
     PackBook: {
@@ -13247,6 +13301,21 @@ export interface components {
       /** Description */
       description: string;
       release_policy?: components["schemas"]["ProfileSnapshot"] | null;
+    };
+    /** ReviewFile */
+    ReviewFile: {
+      /** Path */
+      path: string;
+      /** Medium */
+      medium?: string | null;
+      /** Technical */
+      technical?: {
+        [key: string]: unknown;
+      };
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
     };
     /** ReviewInput */
     ReviewInput: {
@@ -23263,6 +23332,41 @@ export interface operations {
     responses: {
       /** @description Successful Response */
       200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OwnReviewView"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  accept_own_review_api_acquisition_downloads__attempt_id__review_accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AcceptInput"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
         headers: {
           [name: string]: unknown;
         };

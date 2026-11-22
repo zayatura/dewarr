@@ -1,8 +1,23 @@
 import type { components } from "../api/schema";
 
-type Inspection = components["schemas"]["InspectionView"];
-type Download = components["schemas"]["DownloadContext"];
 type Mismatch = components["schemas"]["RequestMismatch"]["field"];
+/** The request side, as both the admin review and the requester's own review send it. */
+type Download = {
+  title: string;
+  authors: string[];
+  medium: string;
+  mismatches?: components["schemas"]["RequestMismatch"][];
+  expected_language?: string | null;
+  expected_language_source?: string | null;
+  release?: components["schemas"]["ReleaseListing"] | null;
+};
+/** An inspected file: the snapshot's own files, or the requester's private-safe subset. */
+type InspectedFile = {
+  path: string;
+  medium?: string | null;
+  technical?: { [key: string]: unknown } | null;
+  metadata?: { [key: string]: unknown } | null;
+};
 type Column = "requested" | "release" | "files";
 type Row = {
   key: string;
@@ -39,8 +54,8 @@ function hours(seconds: number) {
 }
 
 /** What the files' own tags say, read from the inspected media files. */
-function fileFacts(inspection: Inspection, paths?: string[]) {
-  const media = (inspection.snapshot?.files || []).filter(
+function fileFacts(inspected: InspectedFile[], paths?: string[]) {
+  const media = inspected.filter(
     (file) => file.medium && (!paths || paths.includes(file.path)),
   );
   const tags = media.map(
@@ -81,19 +96,19 @@ function fileFacts(inspection: Inspection, paths?: string[]) {
 /** Request, release listing and file tags side by side, with disagreements marked. */
 export default function DownloadComparison({
   download,
-  inspection,
+  files: inspected,
   paths,
   identifiers,
   evidenceTitles,
 }: {
   download: Download;
-  inspection: Inspection;
+  files: InspectedFile[];
   paths?: string[];
   identifiers?: { namespace: string; value: string }[];
   evidenceTitles?: string[];
 }) {
   const release = download.release;
-  const facts = fileFacts(inspection, paths);
+  const facts = fileFacts(inspected, paths);
   // Without readable tags, the matcher's title evidence is the best file-side title.
   const files = { ...facts, title: facts.title || list(evidenceTitles || []) };
   const fields = new Set<Mismatch>(

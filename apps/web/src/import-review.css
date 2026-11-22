@@ -413,3 +413,20 @@
     font-size: 11px;
   }
 }
+
+/* A requester's own review dialog. */
+.own-download-review h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+.own-download-review > p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.own-download-review .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  margin-top: 16px;
+}

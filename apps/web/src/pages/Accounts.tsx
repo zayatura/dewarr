@@ -1713,17 +1713,22 @@ function same(left: string[], right: string[]) {
 }
 
 const automateOptional = new Set(["member", "approver", "requester"]);
+// Add-on grants that keep a preset's name when ticked on top of it.
+const addOns = new Set(["automate", "review_own_downloads"]);
 
 function matchesPreset(
   preset: { id: string; permissions: string[] },
   selected: string[],
 ) {
   if (same(preset.permissions, selected)) return true;
-  if (!automateOptional.has(preset.id) || !selected.includes("automate"))
+  if (
+    !automateOptional.has(preset.id) ||
+    !selected.some((name) => addOns.has(name))
+  )
     return false;
   return same(
     preset.permissions,
-    selected.filter((name) => name !== "automate"),
+    selected.filter((name) => !addOns.has(name)),
   );
 }
 

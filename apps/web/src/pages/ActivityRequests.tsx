@@ -27,6 +27,7 @@ import { Notice } from "../components";
 import InfiniteScroll from "../components/InfiniteScroll";
 import BookDialog from "../components/BookDialog";
 import OwnDownloadReview from "../components/OwnDownloadReview";
+import { createPortal } from "react-dom";
 import { usePagedQuery } from "../hooks/usePagedQuery";
 import { randomUUID } from "../randomUUID";
 import DownloadConstraints from "./DownloadConstraints";
@@ -908,16 +909,15 @@ function RequestCard({
           </Fragment>
         );
       })}
-      {reviewing && (
-        <tr>
-          <td colSpan={7} className="request-dialog-cell">
-            <OwnDownloadReview
-              attemptId={reviewing}
-              close={() => setReviewing(null)}
-            />
-          </td>
-        </tr>
-      )}
+      {reviewing &&
+        // Outside the ledger table, so its column styles can't reach the dialog.
+        createPortal(
+          <OwnDownloadReview
+            attemptId={reviewing}
+            close={() => setReviewing(null)}
+          />,
+          document.body,
+        )}
       {withdrawReason && (
         <tr>
           <td colSpan={7} className="request-dialog-cell">

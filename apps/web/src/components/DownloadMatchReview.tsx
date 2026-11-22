@@ -268,7 +268,7 @@ export default function DownloadMatchReview({
           </p>
           <DownloadComparison
             download={download}
-            inspection={inspection}
+            files={inspection.snapshot?.files || []}
             paths={group?.files.map((file) => file.path)}
             identifiers={match?.evidence.identifiers}
             evidenceTitles={match?.evidence.titles}

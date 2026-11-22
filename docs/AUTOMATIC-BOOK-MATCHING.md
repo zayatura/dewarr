@@ -41,6 +41,13 @@ The reviewer then chooses one of these:
 - **Wrong book, find another**: blocks the release for the request and searches for a replacement with the same requirements, as a reported problem does. The files stay in the download folder, so seeding continues, and the request leaves Download review.
 - **Check again**: reruns the automatic checks, for example after correcting the book's catalog details.
 
+The person who made the request can open **Review download** on their held request. It shows the same reason and comparison. They can always reject the release with **Wrong book, find another**. With the **Resolve own download reviews** permission (an add-on in Settings → Users & access), they can also choose **Right book, add to library**, under these conditions:
+
+- The book goes to a library they can use.
+- Only the title, author or language differs. Unreadable files, several books in one download, identifier problems and contradictory tags still need an administrator.
+
+The import then runs again under the administrator's automatic-import approval, and the confirmation is recorded in the audit log.
+
 No book or edition picker is shown. Downloads with structural problems (several books, unreadable files, ambiguous identifiers) cannot be added from this page. They can be rejected, or the reviewer can choose a release from the same book's source search. Correcting catalog metadata uses the existing book metadata page and its Hardcover search.
 
 Downloaded filenames are optional in a small dialog. Naming templates, hashes, grouping identifiers, inspection dumps and the generic catalog picker are absent from linked-download review. The standalone local-folder import tool remains separate. Import retries preserve their frozen plan and request key, and library confirmation is still required before a request becomes satisfied.

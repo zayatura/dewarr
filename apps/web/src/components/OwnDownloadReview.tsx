@@ -4,10 +4,11 @@ import { api, result } from "../api/client";
 import type { components } from "../api/schema";
 import { Loading, Notice } from "../components";
 import BookDialog from "./BookDialog";
+import DownloadComparison from "./DownloadComparison";
 
 type Reason = components["schemas"]["ReportInput"]["reason"];
 
-/** A requester's held download: why it stopped, and rejecting it themselves. */
+/** A requester's held download: why it stopped, and adding or rejecting it themselves. */
 export default function OwnDownloadReview({
   attemptId,
   close,
@@ -30,6 +31,25 @@ export default function OwnDownloadReview({
   const audio = data?.medium === "audio";
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState<Reason>("wrong-book");
+  const accept = useMutation({
+    mutationFn: async () =>
+      result(
+        await api.POST(
+          "/api/acquisition/downloads/{attempt_id}/review/accept",
+          {
+            params: { path: { attempt_id: attemptId } },
+            body: { confirmation: data!.confirmation! },
+          },
+        ),
+      ),
+    onSuccess: async () => {
+      await Promise.all(
+        ["requests", "downloads", "book-downloads"].map((key) =>
+          cache.invalidateQueries({ queryKey: [key] }),
+        ),
+      );
+    },
+  });
   const reject = useMutation({
     mutationFn: async () =>
       result(
@@ -49,11 +69,25 @@ export default function OwnDownloadReview({
       );
     },
   });
+  const deciding = accept.isPending || reject.isPending;
   return (
     <BookDialog title="Review download" close={close}>
       <div className="own-download-review">
         {review.isPending ? (
           <Loading />
+        ) : accept.isSuccess ? (
+          <>
+            <h3>Adding to your library</h3>
+            <p role="status">
+              Dewarr is adding these files to {data?.library || "your library"}.
+              The request shows when the book is available.
+            </p>
+            <div className="actions">
+              <button className="primary" onClick={close}>
+                Done
+              </button>
+            </div>
+          </>
         ) : reject.isSuccess ? (
           <>
             <h3>Looking for another release</h3>
@@ -72,6 +106,13 @@ export default function OwnDownloadReview({
           <>
             <h3>{data.title}</h3>
             <p role="status">{data.message}</p>
+            {!!data.files?.length && (
+              <DownloadComparison
+                download={data}
+                files={data.files || []}
+                identifiers={data.identifiers}
+              />
+            )}
             {rejecting ? (
               <form
                 className="download-reject"
@@ -123,15 +164,37 @@ export default function OwnDownloadReview({
             ) : (
               <>
                 <p className="muted">
-                  An administrator can add these files to the library. If this
-                  is not the book you wanted, reject the release and Dewarr will
-                  look for another one.
+                  {data.can_add
+                    ? `If these files are the book you wanted, add them to ${data.library || "your library"}. If not, reject the release and Dewarr will look for another one.`
+                    : `${data.add_unavailable || "An administrator will check this download."} If this is not the book you wanted, reject the release and Dewarr will look for another one.`}
                 </p>
                 <div className="actions">
-                  {data.can_reject && (
+                  {data.can_add && (
                     <button
                       className="primary"
-                      onClick={() => setRejecting(true)}
+                      disabled={deciding}
+                      onClick={() => accept.mutate()}
+                    >
+                      {accept.isPending
+                        ? "Adding…"
+                        : "Right book, add to library"}
+                    </button>
+                  )}
+                  {data.can_reject && (
+                    <button
+                      className={data.can_add ? undefined : "primary"}
+                      disabled={deciding}
+                      onClick={() => {
+                        // A language difference suggests the likely reason.
+                        setReason(
+                          data.mismatches?.some(
+                            (item) => item.field === "language",
+                          )
+                            ? "wrong-language"
+                            : "wrong-book",
+                        );
+                        setRejecting(true);
+                      }}
                     >
                       Wrong book, find another
                     </button>
@@ -142,7 +205,7 @@ export default function OwnDownloadReview({
             )}
           </>
         ) : null}
-        <Notice error={review.error || reject.error} />
+        <Notice error={review.error || reject.error || accept.error} />
       </div>
     </BookDialog>
   );

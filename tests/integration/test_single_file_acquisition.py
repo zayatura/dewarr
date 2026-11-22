@@ -68,7 +68,11 @@ from tests.media_fixtures import audio, epub
 
 pytestmark = pytest.mark.integration
 
-OTHER_LANGUAGE = {"automatic-other-language", "automatic-other-language-requester"}
+OTHER_LANGUAGE = {
+    "automatic-other-language",
+    "automatic-other-language-requester",
+    "automatic-other-language-accept",
+}
 
 
 @pytest.mark.parametrize("save_relative", ["", "nested"])
@@ -102,6 +106,7 @@ OTHER_LANGUAGE = {"automatic-other-language", "automatic-other-language-requeste
         "automatic-linked-ebook",
         "automatic-other-language",
         "automatic-other-language-requester",
+        "automatic-other-language-accept",
         "automatic-obfuscated-font",
         "automatic-multiple-isbns",
         "automatic-multiple-isbns-unlisted",
@@ -566,6 +571,52 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             reason = "The files are in German, but this request expects English"
             assert auto.message == reason
             reviewer = review_account[0]
+        if handoff == "automatic-other-language-accept":
+            # A requester with the grant confirms the files are the book they wanted.
+            from app.domain import permissions
+
+            endpoint = f"/api/acquisition/downloads/{auto.attempt_id}/review"
+            async with database() as db, db.begin():
+                (await db.get(User, UUID(admin["id"]))).permissions = permissions.MEMBER
+            own = (await owner_client.get(endpoint)).json()
+            assert not own["can_add"] and own["add_unavailable"].startswith("Your account can't")
+            assert own["mismatches"] == [{"field": "language", "message": reason}]
+            assert own["files"] and set(own["files"][0]) == {
+                "path",
+                "medium",
+                "technical",
+                "metadata",
+            }
+            async with database() as db, db.begin():
+                (await db.get(User, UUID(admin["id"]))).permissions = (
+                    permissions.MEMBER | permissions.REVIEW_OWN_DOWNLOADS
+                )
+            own = (await owner_client.get(endpoint)).json()
+            assert own["can_add"] and own["confirmation"], own
+            stale = await owner_client.post(endpoint + "/accept", json={"confirmation": "old"})
+            assert stale.status_code == 409
+            other = await review_account[0].post(
+                endpoint + "/accept", json={"confirmation": own["confirmation"]}
+            )
+            assert other.status_code == 404
+            accepted = await owner_client.post(
+                endpoint + "/accept", json={"confirmation": own["confirmation"]}
+            )
+            assert accepted.status_code == 202, accepted.text
+            await get_queue().run_worker_async(wait=False, concurrency=1)
+            async with database() as db:
+                auto = await db.scalar(select(AutomaticImport))
+                assert auto.state == "importing", (auto.message, auto.evidence)
+                assert auto.evidence["requester_confirmation"]["user_id"] == admin["id"]
+                entries = list(await db.scalars(select(ImportEntry)))
+                assert len(entries) == 1 and entries[0].state == "confirmed", entries[0].message
+                assert await db.scalar(
+                    select(AuditEvent.id).where(
+                        AuditEvent.action == "acquisition.download.requester_confirmed"
+                    )
+                )
+            assert list(route["target"].rglob("*.epub"))
+            return
         if handoff == "automatic-other-language-requester":
             # The requester sees why it stopped and can reject it without an administrator.
             target = (await owner_client.get("/api/requests")).json()["items"][0]["targets"][0]

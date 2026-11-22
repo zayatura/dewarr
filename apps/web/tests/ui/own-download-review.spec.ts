@@ -2,12 +2,14 @@ import { expect, test } from "../fixtures";
 
 const reason = "The files are in German, but this request expects English";
 
-test("a requester reviews their own held download and rejects it", async ({
-  page,
-}) => {
+async function mockRequests(
+  page: import("@playwright/test").Page,
+  review: Record<string, unknown>,
+) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const reports: unknown[] = [];
+  const accepts: unknown[] = [];
   await page.route("**/api/**", (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/catalog/cover-image") return route.fallback();
@@ -78,13 +80,30 @@ test("a requester reviews their own held download and rejects it", async ({
         medium: "audio",
         message: reason,
         can_reject: true,
+        files: [],
+        mismatches: [],
+        identifiers: [],
+        can_add: false,
+        add_unavailable:
+          "Your account can't add held downloads; an administrator will check it.",
+        ...review,
       };
-    else if (path === "/api/acquisition/recovery/reports") {
+    else if (path === "/api/acquisition/downloads/attempt-1/review/accept") {
+      accepts.push(route.request().postDataJSON());
+      return route.fulfill({ status: 202, json: {} });
+    } else if (path === "/api/acquisition/recovery/reports") {
       reports.push(route.request().postDataJSON());
       return route.fulfill({ status: 202, json: [] });
     }
     return route.fulfill({ json: data });
   });
+  return { errors, reports, accepts };
+}
+
+test("a requester reviews their own held download and rejects it", async ({
+  page,
+}) => {
+  const { errors, reports } = await mockRequests(page, {});
   await page.goto("/requests");
   await page.getByRole("button", { name: "Review download" }).click();
   const dialog = page.getByRole("dialog", { name: "Review download" });
@@ -104,5 +123,55 @@ test("a requester reviews their own held download and rejects it", async ({
       require_approval: false,
     },
   ]);
+  expect(errors).toEqual([]);
+});
+
+test("a requester with the grant adds their own held download", async ({
+  page,
+}) => {
+  const { errors, accepts, reports } = await mockRequests(page, {
+    can_add: true,
+    add_unavailable: null,
+    confirmation: "confirm-1",
+    library: "Library A",
+    mismatches: [{ field: "language", message: reason }],
+    expected_language: "English",
+    expected_language_source: "settings",
+    release: {
+      source: "mam",
+      title: "Harbor Lights",
+      authors: ["Author A"],
+      narrators: [],
+      language: "German",
+    },
+    files: [
+      {
+        path: "Harbor Lights.m4b",
+        medium: "audio",
+        technical: {
+          duration: 3600,
+          tags: {
+            album: "Harbor Lights",
+            artist: "Author A",
+            language: "Deutsch",
+          },
+        },
+        metadata: {},
+      },
+    ],
+  });
+  await page.goto("/requests");
+  await page.getByRole("button", { name: "Review download" }).click();
+  const dialog = page.getByRole("dialog", { name: "Review download" });
+  await expect(
+    dialog.getByRole("row", { name: /Language/ }).locator(".is-mismatch"),
+  ).toHaveText("Deutsch (differs)");
+  await expect(dialog.getByText("add them to Library A")).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Right book, add to library" })
+    .click();
+  await expect(dialog.getByText("Adding to your library")).toBeVisible();
+  expect(accepts).toEqual([{ confirmation: "confirm-1" }]);
+  expect(reports).toEqual([]);
   expect(errors).toEqual([]);
 });

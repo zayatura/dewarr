@@ -22,6 +22,7 @@ AUTO_APPROVE_AUDIO = 1 << 9
 REQUEST_ADVANCED = 1 << 10
 AUTOMATE = 1 << 11
 BYPASS_QUOTAS = 1 << 12
+REVIEW_OWN_DOWNLOADS = 1 << 13
 
 # Set while an approver starts a download for someone else's request.
 approval_dispatch = ContextVar("approval_dispatch", default=False)
@@ -119,6 +120,15 @@ CATALOG = (
         "Automate lists",
         "Downloads",
         "Run unattended list and series acquisition.",
+    ),
+    (
+        "review_own_downloads",
+        REVIEW_OWN_DOWNLOADS,
+        "Resolve own download reviews",
+        "Downloads",
+        "Add a held download of their own request to a library they can use, when only "
+        "the title, author or language differs. Problems with the files stay with "
+        "administrators.",
     ),
 )
 
@@ -225,7 +235,8 @@ def access_label(user, role_name: str | None = None) -> str:
         return "Administrator"
     if user.role == "viewer":
         return "Viewer"
-    stored = effective_permissions(user)
+    # Add-on grants (automation, resolving own reviews) keep the preset's name.
+    stored = effective_permissions(user) & ~REVIEW_OWN_DOWNLOADS
     automate = bool(stored & AUTOMATE)
     if stored == REQUESTER or stored == REQUESTER | AUTOMATE:
         return "Requester"

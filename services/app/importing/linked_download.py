@@ -256,6 +256,22 @@ async def inspection_match(db, inspection, group):
     return await file_match(db, work, selection, inspection, group)
 
 
+# Disagreements a requester may confirm for their own request. Identifier problems
+# and contradictory tags (conflicts) stay with administrators.
+CONFIRMABLE = {"title", "authors", "language", "release_title", "release_authors"}
+
+
+def confirmable(decision):
+    """The fingerprint a requester confirms for these disagreements, or None."""
+    from app.importing.naming import fingerprint
+
+    if decision.agrees or decision.conflicts or not decision.mismatches:
+        return None
+    if any(item["field"] not in CONFIRMABLE for item in decision.mismatches):
+        return None
+    return fingerprint(sorted(item["message"] for item in decision.mismatches))
+
+
 async def request_hold_reason(db, selection, inspection, group):
     """The first way the files or release disagree with the request, in plain words."""
     work = await canonical_work(db, UUID(selection.frozen["origin_work_id"]))
@@ -263,7 +279,9 @@ async def request_hold_reason(db, selection, inspection, group):
     return decision.mismatches[0]["message"] if decision.mismatches else None
 
 
-async def linked_version(db, approver, selection, inspection, group, grouping_revision, *, match):
+async def linked_version(
+    db, approver, selection, inspection, group, grouping_revision, *, match, confirmed=None
+):
     # Specific-edition requests must retain their stronger edition evidence.
     rule = selection.frozen["requirements"]
     if rule.get("version_id") or rule["medium"] != group.medium:
@@ -271,7 +289,8 @@ async def linked_version(db, approver, selection, inspection, group, grouping_re
     work = await canonical_work(db, UUID(selection.frozen["origin_work_id"]))
     facts = group_evidence(inspection.snapshot, group)
     decision = await file_match(db, work, selection, inspection, group)
-    if not decision.agrees:
+    # The requester confirmed exactly these disagreements for their own request.
+    if not decision.agrees and not (confirmed and confirmable(decision) == confirmed):
         return None
     identified = [candidate for candidate in match.candidates if candidate.identifier_match]
     if identified:
