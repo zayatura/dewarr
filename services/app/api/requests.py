@@ -79,6 +79,14 @@ class RequestInput(BaseModel):
     expected_preference_revision: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
+class ReplacementView(BaseModel):
+    """A rejected or failed release being replaced; the old transfer no longer matters."""
+
+    state: str
+    reason: str
+    message: str
+
+
 class TargetView(BaseModel):
     slot: str
     state: str
@@ -109,6 +117,7 @@ class TargetView(BaseModel):
     can_repair: bool = False
     shared_books: list[str] = Field(default_factory=list)
     transfer_notes: list[str] = Field(default_factory=list)
+    replacement: ReplacementView | None = None
 
 
 class ReasonView(BaseModel):
@@ -541,6 +550,9 @@ def _chip(card, target) -> str:
         return "declined"
     if card.approval_status == "pending" or target.message == "Waiting for approval":
         return "pending"
+    replacement = getattr(target, "replacement", None)
+    if target.state != "satisfied" and replacement:
+        return "replacement-held" if replacement.state == "held" else "replacing"
     if target.state != "satisfied" and getattr(target, "needs_review", False):
         return "review"
     if target.attempt_state in _LIVE_DOWNLOADS:
@@ -581,7 +593,10 @@ def _matches_card(card, status: str) -> bool:
     if status == "library":
         return "in-library" in chips
     if status == "downloading":
-        return any(chip in {"downloading", "importing", "preparing-download"} for chip in chips)
+        return any(
+            chip in {"downloading", "importing", "preparing-download", "replacing"}
+            for chip in chips
+        )
     return True
 
 
@@ -680,11 +695,23 @@ async def _decorate_target(db, user, intent, target: TargetView, *, row) -> None
                     )
                     if user.role == "admin":
                         target.inspection_id = automatic.inspection_id
+    recovery = await db.scalar(
+        select(DownloadRecovery).where(DownloadRecovery.selection_id == selection_id)
+    )
+    if recovery and recovery.state != "retried" and target.state != "satisfied":
+        # Describe the replacement, not the rejected transfer it supersedes.
+        target.replacement = ReplacementView(
+            state=recovery.state, reason=recovery.reason, message=recovery.message
+        )
+        target.message = recovery.message
+        target.import_state = target.attempt_message = target.review_message = None
+        target.needs_review = False
+        target.progress = target.download_speed = target.eta_seconds = None
     target.shared_download = len(members) > 1
     target.shared_books = [
         label for item in members if item.id != selection_id and (label := _shared_book(item))
     ]
-    if attempt.state in {"held", "uncertain"} and attempt.message:
+    if attempt.state in {"held", "uncertain"} and attempt.message and not target.replacement:
         target.attempt_message = attempt.message
     if repair:
         target.repair_message = repair.message

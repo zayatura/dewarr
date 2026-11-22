@@ -20,7 +20,31 @@ type StatusTarget = {
   next_action?: string | null;
   needs_review?: boolean;
   import_state?: string | null;
+  replacement?: Replacement | null;
 };
+
+type Replacement = { state: string; reason: string; message: string };
+
+const replacementSteps: Record<string, string> = {
+  queued: "Waiting to search sources again",
+  searching: "Searching sources for another release",
+  selecting: "Choosing the best matching release",
+  approval: "Waiting for an administrator to approve a replacement",
+  complete: "Another copy already satisfied this request",
+  held: "No other release could be chosen automatically. Pick one on the book's Sources tab.",
+};
+
+/** Why the earlier release was dropped, and what the replacement is doing now. */
+export function replacementNotes(replacement: Replacement) {
+  const [kind, detail] = replacement.reason.split(/:\s*(.*)/s);
+  const why =
+    kind === "Rejected in download review"
+      ? `Previous release rejected: ${(detail || "").toLowerCase()}`
+      : kind === "Reported problem"
+        ? `Previous release reported: ${(detail || "").replace(/-/g, " ")}`
+        : `Previous download failed: ${replacement.reason}`;
+  return [why, replacementSteps[replacement.state] || replacement.message];
+}
 
 export function statusLabel(request: StatusRequest, target: StatusTarget) {
   if (!request.reasons.some((reason) => reason.active)) return "Withdrawn";
@@ -35,6 +59,12 @@ export function statusLabel(request: StatusRequest, target: StatusTarget) {
   )
     return "Pending";
   if (target.state === "satisfied") return "In library";
+  if (target.replacement)
+    return target.replacement.state === "held"
+      ? "Replacement needs attention"
+      : target.replacement.state === "approval"
+        ? "Replacement awaits approval"
+        : "Finding another release";
   if (target.needs_review || target.import_state === "held")
     return "Needs review";
   if (["uncertain", "held"].includes(target.attempt_state || ""))

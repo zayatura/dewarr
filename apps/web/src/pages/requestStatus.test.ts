@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { statusLabel } from "./requestStatus.ts";
+import { replacementNotes, statusLabel } from "./requestStatus.ts";
 
 const active = {
   approval_status: "approved",
@@ -150,5 +150,43 @@ test("a held import needs review and a satisfied request wins over stale review"
       needs_review: true,
     }),
     "In library",
+  );
+});
+
+test("a replaced release reports the replacement, not the rejected transfer", () => {
+  const replacement = {
+    state: "selecting",
+    reason: "Rejected in download review: Wrong language",
+    message:
+      "Selecting the next eligible release with the original constraints",
+  };
+  const target = {
+    state: "wanted",
+    attempt_state: "held",
+    import_state: "held",
+    replacement,
+  };
+  assert.equal(statusLabel(active, target), "Finding another release");
+  assert.deepEqual(replacementNotes(replacement), [
+    "Previous release rejected: wrong language",
+    "Choosing the best matching release",
+  ]);
+  assert.equal(
+    statusLabel(active, {
+      ...target,
+      replacement: { ...replacement, state: "held" },
+    }),
+    "Replacement needs attention",
+  );
+  assert.equal(
+    replacementNotes({ ...replacement, state: "held" })[1],
+    "No other release could be chosen automatically. Pick one on the book's Sources tab.",
+  );
+  assert.equal(
+    replacementNotes({
+      ...replacement,
+      reason: "Reported problem: wrong-narrator",
+    })[0],
+    "Previous release reported: wrong narrator",
   );
 });

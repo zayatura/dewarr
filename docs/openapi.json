@@ -37706,6 +37706,30 @@
         ],
         "title": "RepairView"
       },
+      "ReplacementView": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "state",
+          "reason",
+          "message"
+        ],
+        "title": "ReplacementView",
+        "description": "A rejected or failed release being replaced; the old transfer no longer matters."
+      },
       "ReportInput": {
         "properties": {
           "selection_id": {
@@ -42295,6 +42319,16 @@
             },
             "type": "array",
             "title": "Transfer Notes"
+          },
+          "replacement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplacementView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

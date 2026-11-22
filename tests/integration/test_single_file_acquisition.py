@@ -580,6 +580,14 @@ async def test_single_epub_download_to_confirmed_library_keeps_neighbor_private(
             }
             review = (await reviewer.get("/api/requests?status=review")).json()
             assert review["items"] == []
+            # The request now follows the replacement, not the rejected transfer.
+            moving = (await reviewer.get("/api/requests?status=downloading")).json()
+            target = moving["items"][0]["targets"][0]
+            assert target["replacement"]["reason"] == (
+                "Rejected in download review: Wrong language"
+            )
+            assert target["import_state"] is None and not target["needs_review"]
+            assert target["attempt_message"] is None and target["progress"] is None
             assert (
                 await reviewer.post(endpoint + "/reject", json={"reason": "wrong-book"})
             ).status_code == 409

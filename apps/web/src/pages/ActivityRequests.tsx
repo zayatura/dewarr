@@ -37,7 +37,11 @@ import {
   requestCountLabel,
   type RequestFilter,
 } from "./requestFilters";
-import { liveDownloadStates, statusLabel } from "./requestStatus";
+import {
+  liveDownloadStates,
+  replacementNotes,
+  statusLabel,
+} from "./requestStatus";
 import { EffectiveScope } from "./ScopeFields";
 
 type Request = components["schemas"]["RequestView"];
@@ -63,6 +67,8 @@ function mediumLabel(slot: string) {
 
 function chipState(label: string) {
   if (
+    label === "Replacement needs attention" ||
+    label === "Replacement awaits approval" ||
     label === "Needs review" ||
     label === "Source needs review" ||
     label === "Download needs attention"
@@ -71,6 +77,7 @@ function chipState(label: string) {
   if (label === "Download not started") return "failed";
   if (
     [
+      "Finding another release",
       "Preparing download",
       "Searching sources",
       "Waiting for source",
@@ -92,6 +99,7 @@ function chipState(label: string) {
 }
 
 function targetNotes(label: string, target: Target) {
+  if (target.replacement) return replacementNotes(target.replacement);
   const redundant = new Set([
     label,
     "Request declined",
@@ -627,6 +635,7 @@ function RequestCard({
         const label = statusLabel(request, target);
         const active = label === "Downloading";
         const spinning = [
+          "Finding another release",
           "Downloading",
           "Importing",
           "Preparing download",
@@ -699,7 +708,8 @@ function RequestCard({
                     />
                   ) : label === "In library" ? (
                     <CircleCheck size={14} aria-hidden />
-                  ) : label === "Needs review" ||
+                  ) : label === "Replacement needs attention" ||
+                    label === "Needs review" ||
                     label === "Source needs review" ||
                     label === "Download needs attention" ||
                     label === "Download not started" ? (
@@ -712,6 +722,9 @@ function RequestCard({
                     aria-hidden
                   />
                 </button>
+                {target.replacement && (
+                  <p className="request-status-hint">{notes[0]}</p>
+                )}
                 {[
                   "Needs review",
                   "Source needs review",

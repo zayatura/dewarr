@@ -12969,6 +12969,18 @@ export interface components {
       /** Applied At */
       applied_at: string | null;
     };
+    /**
+     * ReplacementView
+     * @description A rejected or failed release being replaced; the old transfer no longer matters.
+     */
+    ReplacementView: {
+      /** State */
+      state: string;
+      /** Reason */
+      reason: string;
+      /** Message */
+      message: string;
+    };
     /** ReportInput */
     ReportInput: {
       /**
@@ -14720,6 +14732,7 @@ export interface components {
       shared_books?: string[];
       /** Transfer Notes */
       transfer_notes?: string[];
+      replacement?: components["schemas"]["ReplacementView"] | null;
     };
     /** TorrentDescriptor */
     TorrentDescriptor: {
