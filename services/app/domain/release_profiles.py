@@ -600,11 +600,30 @@ def series_position_agrees(release, work):
 
 
 def series_book_title(title, release, work):
-    """A source-only subtitle ("Title: The Harbor Cycle, Part One") names the same book
-    when the source also places it at that book's own series position."""
-    return compatible_title(title, work["title"], allow_extra_subtitle=True) and (
-        series_position_agrees(release, work)
-    )
+    """A source title naming the book at its own series position, with words added.
+
+    "Title: The Harbor Cycle, Part One" for "Title", or "Title: Audio Series Season 1"
+    for "Title - Season 1": the source places the release at the book's catalog
+    position, and the catalog title's words appear in order, starting the same way.
+    """
+    from app.domain.title_matching import distinct_work_subtitle, stripped_title, words
+
+    if not series_position_agrees(release, work):
+        return False
+    # "Title: Volume 2" names another volume, never the book plus a subtitle.
+    if distinct_work_subtitle(stripped_title(title or "")) and not distinct_work_subtitle(
+        stripped_title(work["title"] or "")
+    ):
+        return False
+    if compatible_title(title, work["title"], allow_extra_subtitle=True):
+        return True
+    source, catalog = words(title or ""), words(work["title"] or "")
+    # Both start with the catalog's main title: the part before " - " or ":".
+    lead = len(words(re.split(r"\s+[-–—]\s+|:", work["title"] or "", maxsplit=1)[0]))
+    if not lead or source[:lead] != catalog[:lead]:
+        return False
+    remaining = iter(source[lead:])
+    return all(word in remaining for word in catalog[lead:])
 
 
 def assess_release(release, work, preferences, medium="all"):

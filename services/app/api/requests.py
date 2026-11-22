@@ -1000,18 +1000,18 @@ async def view(db, user, intent, *, related=None):
                     target.state, target.message = "cancelled", "Request declined"
                 else:
                     target.state, target.message = "cancelled", "No active request reasons"
-            elif target.state == "wanted" and not (
-                intent.owner_id == user.id and auto_approves(user, spec)
-            ):
-                target.next_action = "none"
+            elif target.state == "wanted":
+                # Only a requester who can download chooses the release here. Everyone
+                # else still sees the requester's actual selection progress below.
+                own = intent.owner_id == user.id and auto_approves(user, spec)
+                target.next_action = "search" if own else "none"
                 target.message = (
-                    "Approved. Start the download from this review."
+                    "Saved to wanted; choose a source release to continue"
+                    if own
+                    else "Approved. Start the download from this review."
                     if download_followup
                     else "Approved. An account that can download will add it to the library."
                 )
-            elif target.state == "wanted":
-                target.next_action = "search"
-                target.message = "Saved to wanted; choose a source release to continue"
                 selection = await db.scalar(
                     select(AcquisitionSelection)
                     .join(

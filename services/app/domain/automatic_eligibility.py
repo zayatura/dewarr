@@ -113,7 +113,8 @@ def eligibility(
             reasons.append("Collection coverage needs review before automatic selection")
         elif descriptor and not proof:
             reasons.append(
-                "Collection files do not uniquely establish the requested published series books"
+                "This release may contain several books, and its files don't show "
+                "which one is this book"
             )
         if version or rule.get("required_narrators") or rule["abridged"] is not None:
             reasons.append(

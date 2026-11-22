@@ -298,3 +298,30 @@ def test_source_subtitle_names_the_book_at_its_own_series_position(position, tit
     assert (identity == "corroborated") is same_book
     if position and title.startswith("Harbor Lights"):
         assert collection_candidate(value, work, catalog) is not same_book
+
+
+@pytest.mark.parametrize(
+    ("title", "same_book"),
+    [
+        ("Harbor Lights: Audio Harbor Season 1", True),
+        ("Harbor Lights Season 1", True),
+        ("Harbor Lights: Audio Harbor Season 2", False),
+        ("Other Lights: Audio Harbor Season 1", False),
+    ],
+)
+def test_source_title_with_added_words_at_the_books_position(title, same_book):
+    from app.domain.release_profiles import series_book_title
+
+    work = {
+        "title": "Harbor Lights - Season 1",
+        "authors": ["Writer"],
+        "series": [{"name": "Harbor Audio", "position": "1"}],
+    }
+    value = release().model_copy(
+        update={
+            "title": title,
+            "raw_title": title,
+            "series": [SourceSeries(source_id="audio", name="Harbor Audio", position="1")],
+        }
+    )
+    assert series_book_title(title, value, work) is same_book

@@ -549,6 +549,19 @@ async def test_clicked_release_download_is_pinned_and_idempotent(
         counts = await client.get("/api/requests/counts")
         assert counts.status_code == 200, counts.text
         assert counts.json()["review"] == 1
+        # Another administrator sees the requester's held release, not "Approved".
+        from contextlib import aclosing
+
+        from tests.integration.test_download_reviews import admin_client
+
+        other, _ = await admin_client(database, name="second-admin")
+        async with aclosing(other):
+            seen = await other.get(f"/api/requests/{saved['request_id']}")
+            assert seen.status_code == 200, seen.text
+            other_target = next(t for t in seen.json()["targets"] if t["slot"] == "audio")
+            assert other_target["selection_status"] == "held"
+            assert other_target["message"] == saved["message"]
+            assert other_target["next_action"] == "none"
     else:
         assert target["attempt_state"] == "queued"
         async with database() as db, db.begin():
