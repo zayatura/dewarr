@@ -13,7 +13,7 @@ from app.domain.catalog_language import LANGUAGE_NAMES, language_name
 from app.domain.catalog_titles import credit_key, display_title
 from app.domain.release_profiles import indexer_title_authors, series_book_title
 from app.domain.series_identity import title_outside_series_note
-from app.domain.title_matching import compatible_title
+from app.domain.title_matching import compatible_title, exact_title_key
 from app.domain.work_graph import canonical_work
 from app.importing.file_editions import attach_file_edition
 from app.importing.match_evidence import group_evidence, language_key
@@ -31,9 +31,23 @@ def _authors(names):
     return sorted(author_key(name) for name in names)
 
 
+def without_series_titles(facts, series):
+    """Audio tags often put the series name in the album tag ("Saga Audio Edition").
+
+    A title that is only one of the book's own series names says nothing about which
+    book it is, so it is neither a contradiction nor a confirmation.
+    """
+    names = {exact_title_key(item["name"]) for item in series if item.get("name")}
+    titles = [value for value in facts.titles if exact_title_key(value) not in names]
+    return (
+        facts if len(titles) == len(facts.titles) else facts.model_copy(update={"titles": titles})
+    )
+
+
 def _file_conflicts(
     work, release, facts, *, series=(), reviewed_collection=False, verified_titles=()
 ):
+    facts = without_series_titles(facts, series)
     catalog = {"title": work.title, "authors": work.authors, "series": list(series)}
     credited = release.get("source") in {"audiobookbay", "prowlarr"}
     title_agrees = bool(facts.titles) and all(
@@ -84,6 +98,7 @@ def request_mismatches(work, release, facts, *, series=(), verified_titles=(), l
     Empty means the release and the files agree with the request. `language` is the
     language the request expects when the catalog book does not record one.
     """
+    facts = without_series_titles(facts, series)
     found = [
         {"field": field, "message": message}
         for field, message in _file_conflicts(

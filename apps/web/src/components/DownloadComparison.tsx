@@ -38,6 +38,8 @@ const columns: { key: Column; label: string }[] = [
   { key: "files", label: "The files say" },
 ];
 
+const unstated = new Set(["und", "zxx", "mis"]);
+
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -88,7 +90,12 @@ function fileFacts(inspected: InspectedFile[], paths?: string[]) {
       ...many("authors"),
     ]),
     narrators: list(tags.map((tag) => tag.narrator || tag.composer)),
-    language: list([...tags.map((tag) => tag.language), ...many("languages")]),
+    // "und" (undetermined) and similar codes mean the tag gives no language.
+    language: list(
+      [...tags.map((tag) => tag.language), ...many("languages")].map((value) =>
+        unstated.has(text(value).toLowerCase()) ? "Not stated" : value,
+      ),
+    ),
     length: duration ? hours(duration) : "",
   };
 }

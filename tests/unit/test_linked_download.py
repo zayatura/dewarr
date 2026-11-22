@@ -463,3 +463,38 @@ def test_resolving_own_reviews_keeps_the_member_label():
     assert permissions.has(user, permissions.REVIEW_OWN_DOWNLOADS)
     user.permissions = permissions.MEMBER
     assert not permissions.has(user, permissions.REVIEW_OWN_DOWNLOADS)
+
+
+def test_a_title_tag_naming_the_books_series_is_neutral():
+    from app.importing.linked_download import request_file_conflicts, request_mismatches
+
+    work = SimpleNamespace(
+        title="Harbor Lights - Season 1", authors=["Author A"], language=None, metadata_fields={}
+    )
+    series = [{"name": "Harbor Lights Audio", "position": "1"}]
+    release = {
+        "source": "mam",
+        "title": "Harbor Lights: Harbor Lights Audio Season 1",
+        "authors": ["Author A"],
+        "series": [{"name": "Harbor Lights Audio", "position": "1"}],
+    }
+    # The album tag holds the series name, as many audiobook rips do.
+    facts = MatchEvidence(titles=["harbor lights audio"], authors=[["author a"]])
+    assert request_file_conflicts(work, release, facts, series=series) == []
+    assert request_mismatches(work, release, facts, series=series, language="en") == []
+    # A different book's title still contradicts the request.
+    other = facts.model_copy(update={"titles": ["another book"]})
+    assert "The files name a different book" in request_file_conflicts(
+        work, release, other, series=series
+    )
+
+
+def test_a_transfer_dewarr_did_not_start_is_explained_without_paths():
+    from app.domain.download_attempts import existing_transfer
+
+    message = existing_transfer(
+        "qbittorrent", [SimpleNamespace(category="audiobooks/member", save_path="/srv/x")]
+    )
+    assert message.startswith("qBittorrent already has this download (category audiobooks/member)")
+    assert "Recheck" in message and "/srv" not in message
+    assert len(message) <= 300

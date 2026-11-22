@@ -479,6 +479,27 @@ async def recheck(db, user, identifier):
     return attempt
 
 
+CLIENT_NAMES = {
+    "qbittorrent": "qBittorrent",
+    "transmission": "Transmission",
+    "deluge": "Deluge",
+    "sabnzbd": "SABnzbd",
+    "nzbget": "NZBGet",
+}
+
+
+def existing_transfer(kind, states):
+    """Explain a transfer Dewarr did not start. Members see this, so no server paths."""
+    client = CLIENT_NAMES.get(kind, "The download client")
+    category = next((value for state in states if (value := getattr(state, "category", None))), "")
+    return (
+        f"{client} already has this download"
+        + (f" (category {category})" if category else "")
+        + ", added outside Dewarr. Dewarr won't take over a transfer it didn't start. "
+        f"Remove it from {client}, keeping its files if you still need them, then choose Recheck."
+    )
+
+
 async def find(client, selection, tag):
     if nzb_release(selection):
         return await client.find(attempt_tag=tag, torrent_hash=None)
@@ -881,10 +902,7 @@ async def run(identifier):
             states = await find(client, selection, tag)
             if not already_submitted:
                 if states:
-                    raise AdapterError(
-                        FailureKind.UNCERTAIN,
-                        "An existing transfer conflicts with this new attempt; it was not adopted",
-                    )
+                    raise AdapterError(FailureKind.UNCERTAIN, existing_transfer(kind, states))
                 storage = await capacity.observe_download(frozen)
                 async with session_factory()() as db, db.begin():
                     attempt, current = await locked(db, identifier)
